@@ -1,0 +1,12 @@
+#screen {
+  width: calc(4 * 256px);
+  height: calc(4 * 192px);
+}
+
+#data {
+  font-family: "Courier New", Courier, monospace;
+  box-sizing: content-box;
+  width: calc(4 * 256px);
+  text-align: center;
+  padding: 20px;
+}
