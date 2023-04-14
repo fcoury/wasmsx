@@ -57,4 +57,9 @@ impl JsMachine {
         renderer.draw();
         renderer.screen_buffer.to_vec()
     }
+
+    #[wasm_bindgen(getter)]
+    pub fn display_mode(&self) -> String {
+        format!("{:?}", self.0.cpu.io.bus.borrow().vdp.display_mode)
+    }
 }

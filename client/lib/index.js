@@ -35,7 +35,7 @@ class Renderer {
         this.ctx.putImageData(this.screenImageData, 0, 0);
     }
     renderData(data) {
-        console.log("pc", data.pc.toString(16));
+        console.log("pc", data.pc.toString(16), data.display_mode);
         const pc = document.getElementById("pc");
         if (pc) {
             pc.innerText = data.pc.toString(16);
@@ -86,7 +86,7 @@ class Emulator {
         return this.machine.screen();
     }
     getData() {
-        return { pc: this.machine.pc };
+        return { pc: this.machine.pc, display_mode: this.machine.display_mode };
     }
     screen() {
         // return this.machine.screen();
