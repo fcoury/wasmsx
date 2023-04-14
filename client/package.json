@@ -1,0 +1,15 @@
+{
+  "name": "wasmsx",
+  "version": "0.1.0",
+  "main": "index.js",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.0.4"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc -w",
+    "build:wasm": "cd .. && wasm-pack build --target web --out-dir client/pkg"
+  }
+}
