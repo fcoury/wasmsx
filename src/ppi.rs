@@ -43,17 +43,17 @@ impl Ppi {
         match port {
             0xA8 => {
                 // get primary slot config
-                info!(
-                    "[PPI] [RD] [PrimarySlot] [{:02X}] = {:02X}",
-                    port, self.primary_slot_config,
-                );
+                // info!(
+                //     "[PPI] [RD] [PrimarySlot] [{:02X}] = {:02X}",
+                //     port, self.primary_slot_config,
+                // );
                 self.primary_slot_config
             }
             0xA9 => {
-                info!(
-                    "[PPI] [RD] [KeybordPort] [{:02X}] = {:02X}",
-                    port, self.register_b
-                );
+                // info!(
+                //     "[PPI] [RD] [KeybordPort] [{:02X}] = {:02X}",
+                //     port, self.register_b
+                // );
                 self.register_b
             }
             0xAA => {
@@ -65,14 +65,14 @@ impl Ppi {
                 // if (mod & 0xa0) updatePulseSignal();
                 // if (mod & 0x40) updateCapsLed();
 
-                info!(
-                    "[PPI] [RD] [Register C ] [{:02X}] = {:02X}",
-                    port, self.register_c
-                );
+                // info!(
+                //     "[PPI] [RD] [Register C ] [{:02X}] = {:02X}",
+                //     port, self.register_c
+                // );
                 self.register_c
             }
             0xAB => {
-                info!("[PPI] [RD] [IgnoredPort] [{:02X}] = {:02X}", port, 0xFF);
+                // info!("[PPI] [RD] [IgnoredPort] [{:02X}] = {:02X}", port, 0xFF);
                 // ignored output port
                 0xFF
             }
@@ -83,16 +83,16 @@ impl Ppi {
     pub fn write(&mut self, port: u8, value: u8) {
         match port {
             0xA8 => {
-                info!("[PPI] [WR] [PrimarySlot] [{:02X}] = {:02X}", port, value);
+                // info!("[PPI] [WR] [PrimarySlot] [{:02X}] = {:02X}", port, value);
                 // set primary slot config
                 self.primary_slot_config = value;
             }
             0xA9 => {
                 // this port is ignored as output -- input only
-                info!("[PPI] [WR] [IgnoredPort] [{:02X}] = {:02X}", port, value);
+                // info!("[PPI] [WR] [IgnoredPort] [{:02X}] = {:02X}", port, value);
             }
             0xAA => {
-                info!("[PPI] [WR] [PpiControl1] [{:02X}] = {:02X}", port, value);
+                // info!("[PPI] [WR] [PpiControl1] [{:02X}] = {:02X}", port, value);
                 let mode = self.register_c ^ value;
                 if mode == 0 {
                     return;
@@ -107,7 +107,7 @@ impl Ppi {
                 // else if (bit === 6) updateCapsLed();
             }
             0xAB => {
-                info!("[PPI] [WR] [PpiControl2] [{:02X}] = {:02X}", port, value);
+                // info!("[PPI] [WR] [PpiControl2] [{:02X}] = {:02X}", port, value);
                 let bit = (value & 0x0e) >> 1;
                 if (value & 0x01) == 0 {
                     self.register_c &= !(1 << bit);
