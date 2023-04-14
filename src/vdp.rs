@@ -212,15 +212,25 @@ impl TMS9918 {
     }
 
     fn update_mode(&mut self) {
-        // Get the Mx bits from registers R#0 and R#1
-        let mx_bits = ((self.registers[0] & 0x0E) >> 1) | ((self.registers[1] & 0x18) << 2);
+        // Get the Mx bits from registers R#0 and R#0 - M3 is in R#1, M1 and M2 are in R#1
+        // let mx_bits = ((self.registers[0] & 0x0E) >> 1) | ((self.registers[1] & 0x18) << 2);
+
+        let r0 = self.registers[0];
+        let r1 = self.registers[1];
+        let m1: u8 = (r1 >> 4) & 0b0001;
+        let m2: u8 = (r1 >> 3) & 0b0001;
+        let m3: u8 = (r0 >> 1) & 0b0001;
+
+        tracing::info!("[VDP] M1: {:?} | M2: {:?} | M3: {:?}", m1, m2, m3);
+
+        let mx_bits: u8 = (m1 << 2) | (m2 << 1) | m3;
 
         // Determine the display mode based on the Mx bits
         self.display_mode = match mx_bits {
-            0x00 => DisplayMode::Graphic1,
-            0x01 => DisplayMode::Graphic2,
-            0x08 => DisplayMode::Text1,
-            0x10 => DisplayMode::Multicolor,
+            0b000 => DisplayMode::Graphic1,
+            0b001 => DisplayMode::Graphic2,
+            0b010 => DisplayMode::Multicolor,
+            0b100 => DisplayMode::Text1,
             _ => {
                 tracing::warn!(
                     "[VDP] Unsupported display mode: 0x{:02X} ({:04b})",
@@ -253,7 +263,7 @@ impl TMS9918 {
         // Handle register-specific functionality
         match reg {
             0 => {
-                if modified & 0x10 == 0 {
+                if modified & 0x10 != 0 {
                     // Clear FH bit immediately when IE becomes 0? Not as per https://www.mail-archive.com/msx@stack.nl/msg13886.html
                     // We clear it only at the beginning of the next line if IE === 0
                     // Laydock2 has glitches on WebMSX with Turbo and also on a real Expert3 at 10MHz
@@ -264,7 +274,7 @@ impl TMS9918 {
                         latched_value, data
                     );
                 }
-                if modified & 0x0e == 0 {
+                if modified & 0x0e != 0 {
                     info!(
                         "[VDP] Updating mode... | Latched Value: 0x{:02X} | Data: 0x{:02X}",
                         latched_value, data
@@ -279,60 +289,72 @@ impl TMS9918 {
                 if modified & 0x20 != 0 {
                     // IE0
                     info!(
-                        "[VDP] Enable line interrupt | Latched Value: 0x{:02X} | Data: 0x{:02X}",
+                        "[VDP] 1 - 0x20 - Enable line interrupt | Latched Value: 0x{:02X} | Data: 0x{:02X}",
                         latched_value, data
                     );
                     // TODO self.update_irq();
                 }
-                if modified & 0x40 == 0 {
+                if modified & 0x40 != 0 {
                     // BL
                     info!(
-                        "[VDP] Disable frame interrupt | Latched Value: 0x{:02X} | Data: 0x{:02X}",
+                        "[VDP] 1 - 0x40 - Blanking change pending | Latched Value: 0x{:02X} | Data: 0x{:02X}",
                         latched_value, data
                     );
                     // IE1: Frame interrupt enable
                     // WebMSX blanking_change_pending = true
                 }
-                if modified & 0x18 == 0 {
+                if modified & 0x18 != 0 {
                     // Mx
                     info!(
-                        "[VDP] Update mode | Latched Value: 0x{:02X} | Data: 0x{:02X}",
+                        "[VDP] 1 - 0x18 - Update mode | Latched Value: 0x{:02X} | Data: 0x{:02X}",
                         latched_value, data
                     );
                     self.update_mode();
                 }
-                if modified & 0x04 == 0 { //CDR  (Undocumented, changes reg 13 timing to lines instead of frames)
-                     // TODO WebMSX updateBlinking();
-                }
-                if modified & 0x03 == 0 {
+                if modified & 0x04 != 0 {
+                    //CDR  (Undocumented, changes reg 13 timing to lines instead of frames)
                     info!(
-                        "[VDP] Update sprites | Latched Value: 0x{:02X} | Data: 0x{:02X}",
+                        "[VDP] 1 - 0x04 - Update blinking | Latched Value: 0x{:02X} | Data: 0x{:02X}",
+                        latched_value, data
+                    );
+                    // TODO WebMSX updateBlinking();
+                }
+                if modified & 0x03 != 0 {
+                    // SI, MAG
+                    info!(
+                        "[VDP] 1 - 0x03 - Update sprites config | Latched Value: 0x{:02X} | Data: 0x{:02X}",
                         latched_value, data
                     );
                     // TODO self.update_sprites();
                 }
             }
             2 => {
-                info!(
-                    "[VDP] Update layout table address | Latched Value: 0x{:02X} | Data: 0x{:02X}",
-                    latched_value, data
-                );
-                // Update layout table address
-                // TODO WebMSX if (mod & 0x7f) updateLayoutTableAddress();
+                if modified & 0x7f != 0 {
+                    info!(
+                        "[VDP] 2 - 0x7f - Update layout table address | Latched Value: 0x{:02X} | Data: 0x{:02X}",
+                        latched_value, data
+                    );
+
+                    // Update layout table address
+                    // TODO WebMSX if (mod & 0x7f) updateLayoutTableAddress();
+                }
             }
             10 => {
-                info!(
-                    "[VDP] Update color table address | Latched Value: 0x{:02X} | Data: 0x{:02X}",
-                    latched_value, data
-                );
-                // Update color table address
-                // Implement the functionality based on the WebMSX code
-                // TODO WebMSX - if ((mod & 0x07) === 0) break; else fallthrough
-                // which I don't understand... fallthrough how?
+                if modified & 0x07 != 0 {
+                    info!(
+                        "[VDP] 10 - 0x07 - Update color table address | Latched Value: 0x{:02X} | Data: 0x{:02X}",
+                        latched_value, data
+                    );
+
+                    // Update color table address
+                    // Implement the functionality based on the WebMSX code
+                    // TODO WebMSX - if ((mod & 0x07) === 0) break; else fallthrough
+                    // which I don't understand... fallthrough how?
+                }
             }
             3 => {
                 info!(
-                    "[VDP] Update pattern table address | Latched Value: 0x{:02X} | Data: 0x{:02X}",
+                    "[VDP] 3 - Update pattern table address | Latched Value: 0x{:02X} | Data: 0x{:02X}",
                     latched_value, data
                 );
                 // Update pattern table address
@@ -342,86 +364,198 @@ impl TMS9918 {
                 // colorTableAddressMask = add | colorTableAddressMaskBase;
             }
             4 => {
-                info!(
-                    "[VDP] Update pattern table address | Latched Value: 0x{:02X} | Data: 0x{:02X}",
-                    latched_value, data
-                );
-                // Update pattern table address
-                // Implement the functionality based on the WebMSX code
-                // let cpt_base = (self.registers[4] as usize & 0x07) * 0x0800;
-                // self.cpt_base_address = cpt_base;
+                if modified & 0x3f != 0 {
+                    info!(
+                        "[VDP] 4 - 0x3f - Update pattern table address | Latched Value: 0x{:02X} | Data: 0x{:02X}",
+                        latched_value, data
+                    );
+                    // Update pattern table address
+                    // Implement the functionality based on the WebMSX code
+                    // let cpt_base = (self.registers[4] as usize & 0x07) * 0x0800;
+                    // self.cpt_base_address = cpt_base;
+                }
             }
-            5 | 11 => {
-                info!("[VDP] Update sprite attribute table address | Latched Value: 0x{:02X} | Data: 0x{:02X}", latched_value, data);
+            5 => {
+                info!("[VDP] 5 - Update sprite attribute table address | Latched Value: 0x{:02X} | Data: 0x{:02X}", latched_value, data);
+                // WebMSX
+                // add = ((register[11] << 15) | (register[5] << 7)) & 0x1ffff;
+                // spriteAttrTableAddress = add & modeData.sprAttrTBase;
+            }
+            11 => {
+                info!("[VDP] 11 - Update sprite attribute table address | Latched Value: 0x{:02X} | Data: 0x{:02X}", latched_value, data);
                 // Update sprite attribute table address
                 // Implement the functionality based on the WebMSX code
+                // if ((mod & 0x03) === 0) break;
             }
             6 => {
-                info!("[VDP] Update sprite pattern table address | Latched Value: 0x{:02X} | Data: 0x{:02X}", latched_value, data);
-                // Update sprite pattern table address
-                // Implement the functionality based on the WebMSX code
+                if modified & 0x3f != 0 {
+                    info!("[VDP] 6 - 0x3f - Update sprite pattern table address | Latched Value: 0x{:02X} | Data: 0x{:02X}", latched_value, data);
+                    // Update sprite pattern table address
+                    // Implement the functionality based on the WebMSX code
+                    // if (mod & 0x3f) updateSpritePatternTableAddress();
+                }
             }
             7 => {
+                // BD
                 info!(
-                    "[VDP] Update backdrop color | Latched Value: 0x{:02X} | Data: 0x{:02X}",
+                    "[VDP] 7 - Update backdrop color | Latched Value: 0x{:02X} | Data: 0x{:02X}",
                     latched_value, data
                 );
                 // Update backdrop color
                 // Implement the functionality based on the WebMSX code
+                // if (mod & (modeData.bdPaletted ? 0x0f : 0xff)) updateBackdropColor();  // BD
             }
             8 => {
-                info!(
-                    "[VDP] Update transparency and sprites config | Latched Value: 0x{:02X} | Data: 0x{:02X}",
-                    latched_value, data
-                );
+                if modified & 0x20 != 0 {
+                    // TP
+                    info!(
+                        "[VDP] 8 - 0x20 - Update transparency | Latched Value: 0x{:02X} | Data: 0x{:02X}",
+                        latched_value, data
+                    );
+                    // WebMSX if (mod & 0x20) updateTransparency();                    // TP
+                }
+                if modified & 0x02 != 0 {
+                    // SPD
+                    info!(
+                        "[VDP] 8 - 0x02 - Update sprites config | Latched Value: 0x{:02X} | Data: 0x{:02X}",
+                        latched_value, data
+                    );
+                    // WebMSX if (mod & 0x02) updateSpritesConfig();                   // SPD
+                }
                 // Update transparency and sprites config
                 // Implement the functionality based on the WebMSX code
             }
             9 => {
-                info!(
-                    "[VDP] Update signal metrics, etc. | Latched Value: 0x{:02X} | Data: 0x{:02X}",
-                    latched_value, data
-                );
+                if modified & 0x80 != 0 {
+                    // LN
+                    info!(
+                        "[VDP] 9 - 0x80 - Update signal metrics | Latched Value: 0x{:02X} | Data: 0x{:02X}",
+                        latched_value, data
+                    );
+                }
+                if modified & 0x08 != 0 {
+                    // IL
+                    info!(
+                        "[VDP] 9 - 0x08 - Update render metrics | Latched Value: 0x{:02X} | Data: 0x{:02X}",
+                        latched_value, data
+                    );
+                }
+                if modified & 0x04 != 0 {
+                    // EO
+                    info!(
+                        "[VDP] 9 - 0x04 - Update layout address mask | Latched Value: 0x{:02X} | Data: 0x{:02X}",
+                        latched_value, data
+                    );
+                }
+                if modified & 0x02 != 0 {
+                    // NT
+                    info!(
+                        "[VDP] 9 - 0x02 - Update video standard | Latched Value: 0x{:02X} | Data: 0x{:02X}",
+                        latched_value, data
+                    );
+                }
                 // Update signal metrics, render metrics, layout table address mask, and video standard
                 // Implement the functionality based on the WebMSX code
+                // if (mod & 0x80) updateSignalMetrics(false);              // LN
+                // if (mod & 0x08) updateRenderMetrics(false);              // IL
+                // if (mod & 0x04) updateLayoutTableAddressMask();          // EO
+                // if (mod & 0x02) updateVideoStandardSoft();               // NT
             }
             13 => {
                 info!(
-                    "[VDP] Update blinking | Latched Value: 0x{:02X} | Data: 0x{:02X}",
+                    "[VDP] 13 - Update blinking | Latched Value: 0x{:02X} | Data: 0x{:02X}",
                     latched_value, data
                 );
                 // Update blinking
                 // Implement the functionality based on the WebMSX code
             }
             14 => {
-                info!(
-                    "[VDP] Update VRAM pointer | Latched Value: 0x{:02X} | Data: 0x{:02X}",
-                    latched_value, data
-                );
                 // Update VRAM pointer
-                if modified & 0x07 != 0 {
+                if modified & 0x07 == 0 {
+                    info!(
+                        "[VDP] 14 - 0x07 - Update VRAM pointer | Latched Value: 0x{:02X} | Data: 0x{:02X}",
+                        latched_value, data
+                    );
+
                     self.address = ((latched_value & 0x07) as u16) << 14 | (self.address & 0x3FFF);
                     info!("[VDP] Setting VRAM pointer: {:04X}", self.address);
                 }
+            }
+            16 => {
+                info!(
+                    "[VDP] 16 - Reset palette first write | Latched Value: 0x{:02X} | Data: 0x{:02X}",
+                    latched_value, data
+                );
+                // WebMSX paletteFirstWrite = null;
+            }
+            18 => {
+                if modified & 0x0f != 0 {
+                    info!(
+                        "[VDP] 18 - 0x0f - Horizontal adjust | Latched Value: 0x{:02X} | Data: 0x{:02X}",
+                        latched_value, data
+                    );
+                    // WebMSX:
+                    // if (mod & 0x0f) horizontalAdjust = -7 + ((val & 0x0f) ^ 0x07);
+                }
+                if modified & 0xf0 != 0 {
+                    info!(
+                        "[VDP] 18 - 0xf0 - Vertical adjust | Latched Value: 0x{:02X} | Data: 0x{:02X}",
+                        latched_value, data
+                    );
+                    // WebMSX:
+                    // if (mod & 0xf0) {
+                    //     verticalAdjust = -7 + ((val >>> 4) ^ 0x07);
+                    //     updateSignalMetrics(false);
+                    // }
+                }
+            }
+            19 => {
+                info!(
+                    "[VDP] 19 - Set horizontal int line | Latched Value: 0x{:02X} | Data: 0x{:02X}",
+                    latched_value, data
+                );
+                // horizontalIntLine = (val - register[23]) & 255;
+            }
+            23 => {
+                info!(
+                    "[VDP] 23 - Set horizontal int line | Latched Value: 0x{:02X} | Data: 0x{:02X}",
+                    latched_value, data
+                );
+                // horizontalIntLine = (register[19] - val) & 255;
+            }
+            25 => {
+                // 9958 only
+            }
+            26 => {
+                // 9958 only
+            }
+            27 => {
+                // 9958 only
+            }
+            44 => {
+                info!("[VDP] 44 - CPU Write | Data: 0x{:02X}", data);
+            }
+            46 => {
+                info!("[VDP] 46 - Start Command | Data: 0x{:02X}", data);
             }
             _ => {}
         }
     }
 
     fn write_99(&mut self, data: u8) {
-        info!(
-            "[VDP] Port: 99 | Address: {:04X} | Data: 0x{:02X} ({}).",
-            self.address, data, data as char
-        );
+        // info!(
+        //     "[VDP] Port: 99 | Address: {:04X} | Data: 0x{:02X} ({}).",
+        //     self.address, data, data as char
+        // );
 
         if let Some(latched_value) = self.first_write {
-            info!(
-                "[VDP] Latched: 0x{:02X} Received: 0x{:02X} Is 0x80? {}",
-                latched_value,
-                data,
-                data & 0x80
-            );
-            if data & 0x80 == 0 {
+            // info!(
+            //     "[VDP] Latched: 0x{:02X} Received: 0x{:02X} Is 0x80? {}",
+            //     latched_value,
+            //     data,
+            //     data & 0x80
+            // );
+            if data & 0x80 != 0 {
                 info!(
                     "[VDP] Write Register: {:02X} <- Latched Value: {:02X}",
                     data, latched_value,
@@ -441,6 +575,7 @@ impl TMS9918 {
                     "[VDP] Also setting high part of the address to {:02X}. Address after: {:04X}",
                     latched_value, self.address
                 );
+                info!("");
             } else {
                 // Set VRAM pointer
                 info!(
@@ -448,6 +583,7 @@ impl TMS9918 {
                     latched_value, data
                 );
                 info!("[VDP] Current address: 0x{:04X}", self.address);
+                info!("");
 
                 // // extracts the 6-bit most significant bits
                 // let msb = (data & 0x3F) as u16;
@@ -470,7 +606,7 @@ impl TMS9918 {
                     | (latched_value as u16);
 
                 // Pre-read VRAM if "WriteMode = 0"
-                if (data & 0x40) == 0 {
+                if (data & 0x40) != 0 {
                     self.data_pre_read = self.vram[self.address as usize];
                     self.address = (self.address + 1) & 0x3FFF;
                 }
@@ -482,12 +618,12 @@ impl TMS9918 {
             // println!("Address before: {:04X}", self.address);
             self.address = (self.address & 0xFF00) | data as u16;
             // println!("Address after: {:04X}", self.address);
-            info!(
-                "[VDP] Received first byte of the address (0x{:02X}), latching...",
-                data
-            );
+            // info!(
+            //     "[VDP] Received first byte of the address (0x{:02X}), latching...",
+            //     data
+            // );
         }
-        info!("");
+        // info!("");
     }
 
     pub fn read(&mut self, port: u8) -> u8 {
