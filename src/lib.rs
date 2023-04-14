@@ -34,6 +34,13 @@ pub struct JsMachine(Machine);
 impl JsMachine {
     #[wasm_bindgen(constructor)]
     pub fn new(rom_data: &[u8]) -> Self {
+        // tracing_wasm::set_as_global_default_with_config(
+        //     WASMLayerConfigBuilder::default()
+        //         .set_max_level(tracing::Level::DEBUG)
+        //         .build(),
+        // );
+        tracing_wasm::set_as_global_default();
+
         Self(get_machine(rom_data))
     }
 

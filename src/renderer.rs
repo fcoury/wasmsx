@@ -32,8 +32,6 @@ impl<'a> Renderer<'a> {
         let y1 = 192;
         let height = y1 - y0;
 
-        tracing::trace!("Rendering mode: {:?}", self.vdp.display_mode);
-
         for y in y0..height {
             // renders this raster line
             match self.vdp.display_mode {
@@ -60,7 +58,7 @@ impl<'a> Renderer<'a> {
         // let fg = self.vdp.registers[7] & 0xF0;
         // let bg = self.vdp.registers[7] & 0x0F;
         let fg = 15;
-        let bg = 4;
+        let bg = 1;
 
         let caracter_pattern_area = self.vdp.char_pattern_table();
         let l = (line + self.vdp.get_vertical_scroll()) & 7;
@@ -89,7 +87,7 @@ impl<'a> Renderer<'a> {
         // let fg = self.vdp.registers[7] & 0xF0;
         // let bg = self.vdp.registers[7] & 0x0F;
         let fg = 15;
-        let bg = 4;
+        let bg = 1;
 
         let caracter_pattern_area = self.vdp.char_pattern_table();
         let l = (line + self.vdp.get_vertical_scroll()) & 7;

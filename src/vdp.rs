@@ -222,7 +222,11 @@ impl TMS9918 {
             0x08 => DisplayMode::Text1,
             0x10 => DisplayMode::Multicolor,
             _ => {
-                tracing::warn!("[VDP] Unsupported display mode: {:04b}", mx_bits);
+                tracing::warn!(
+                    "[VDP] Unsupported display mode: 0x{:02X} ({:04b})",
+                    mx_bits,
+                    mx_bits
+                );
                 DisplayMode::Text1 // Default to Text 1 for unsupported modes
             }
         };
