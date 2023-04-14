@@ -84,11 +84,9 @@ class Renderer {
    * @param {string} data.display_mode - The display mode
    */
   public renderData(data: { pc: number; display_mode: string }) {
-    console.log("pc", data.pc.toString(16), data.display_mode);
-    const pc = document.getElementById("data");
-    if (pc) {
-      pc.innerText = data.pc.toString(16);
-    }
+    this.data.innerText = `Display Mode: ${data.display_mode} PC: 0x${data.pc
+      .toString(16)
+      .padStart(4, "0")} `;
   }
 }
 
