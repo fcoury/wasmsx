@@ -1,84 +1,33 @@
-use std::{
-    cell::{Ref, RefCell, RefMut},
-    fmt,
-    rc::Rc,
-};
+use std::{cell::RefCell, fmt, rc::Weak};
 
-use z80::{Z80_io, Z80};
+use z80::Z80_io;
 
 use crate::{
-    bus::{Bus, MemorySegment},
+    bus::Bus,
     slot::{RamSlot, RomSlot, SlotType},
-    utils::hexdump,
-    vdp::TMS9918,
+    vdp::DisplayMode,
 };
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct ProgramEntry {
-    pub address: u16,
-    pub instruction: String,
-    pub data: String,
-    pub dump: Option<String>,
-}
-
-impl fmt::Display for ProgramEntry {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{:04X}  {:<12}  {:<20} {}",
-            self.address,
-            self.data,
-            self.instruction,
-            self.dump.as_deref().unwrap_or("")
-        )
-    }
-}
-
-pub struct Io {
-    pub bus: Rc<RefCell<Bus>>,
-}
-
-impl Z80_io for Io {
-    fn read_byte(&self, address: u16) -> u8 {
-        if address == 0x1452 || address == 0x0d12 || address == 0x0c3c {
-            tracing::info!("[KEYBOARD] Reading from {:04X}", address);
-        }
-        self.bus.borrow().read_byte(address)
-    }
-
-    fn write_byte(&mut self, address: u16, value: u8) {
-        if address == 0x1452 || address == 0x0d12 || address == 0x0c3c {
-            tracing::info!("[KEYBOARD] Writing to {:04X}", address);
-        }
-        self.bus.borrow_mut().write_byte(address, value)
-    }
-
-    fn port_in(&self, port: u16) -> u8 {
-        self.bus.borrow_mut().input(port as u8)
-    }
-
-    fn port_out(&mut self, port: u16, value: u8) {
-        self.bus.borrow_mut().output(port as u8, value)
-    }
-}
 
 // #[derive(Derivative, Serialize, Deserialize)]
 // #[derivative(Clone, Debug, PartialEq, Eq)]
 
 pub struct Machine {
-    pub cpu: Rc<RefCell<Z80<Io>>>,
+    pub bus: Bus,
     pub current_scanline: u16,
 }
 
 impl Default for Machine {
     fn default() -> Self {
         println!("Initializing MSX...");
-        let bus = Rc::new(RefCell::new(Bus::default()));
-        let io = Io { bus };
-        let cpu = Rc::new(RefCell::new(Z80::new(io)));
+        let bus = Bus::new(&[
+            SlotType::Empty,
+            SlotType::Empty,
+            SlotType::Empty,
+            SlotType::Empty,
+        ]);
 
         Self {
-            cpu,
+            bus,
             current_scanline: 0,
         }
     }
@@ -87,41 +36,35 @@ impl Default for Machine {
 impl Machine {
     pub fn new(slots: &[SlotType]) -> Self {
         let bus = Bus::new(slots);
-        let cpu = Rc::new(RefCell::new(Z80::new(Io { bus: bus.clone() })));
-        bus.borrow_mut().cpu = Some(cpu.clone());
 
         Self {
-            cpu,
+            bus,
             current_scanline: 0,
         }
     }
 
-    pub fn cpu(&self) -> Ref<Z80<Io>> {
-        self.cpu.borrow()
+    pub fn screen_buffer(&self) -> Vec<u8> {
+        self.bus.screen_buffer()
     }
 
-    pub fn mut_cpu(&mut self) -> RefMut<Z80<Io>> {
-        self.cpu.borrow_mut()
+    pub fn vram(&self) -> Vec<u8> {
+        self.bus.vram()
     }
 
     pub fn load_rom(&mut self, slot: u8, data: &[u8]) {
-        self.mut_cpu().io.bus.borrow_mut().load_rom(slot, data);
+        self.bus.load_rom(slot, data);
     }
 
     pub fn load_ram(&mut self, slot: u8) {
-        self.mut_cpu().io.bus.borrow_mut().load_ram(slot);
+        self.bus.load_ram(slot);
     }
 
     pub fn load_empty(&mut self, slot: u8) {
-        self.mut_cpu().io.bus.borrow_mut().load_empty(slot);
+        self.bus.load_empty(slot);
     }
 
     pub fn print_memory_page_info(&self) {
-        self.cpu().io.bus.borrow().print_memory_page_info();
-    }
-
-    pub fn get_vdp(&self) -> TMS9918 {
-        self.cpu().io.bus.borrow().vdp().clone()
+        self.bus.print_memory_page_info();
     }
 
     pub fn mem_size(&self) -> usize {
@@ -132,55 +75,30 @@ impl Machine {
     pub fn ram(&self) -> Vec<u8> {
         let mut memory = Vec::new();
         for pc in 0..self.mem_size() {
-            memory.push(self.cpu().io.read_byte(pc as u16));
+            memory.push(self.bus.read_byte(pc as u16));
         }
         memory
     }
 
-    pub fn vram(&self) -> Vec<u8> {
-        self.cpu().io.bus.borrow().vdp().vram.to_vec()
-    }
-
     pub fn pc(&self) -> u16 {
-        self.cpu().pc
+        self.bus.pc()
     }
 
     pub fn halted(&self) -> bool {
-        self.cpu().halted
-    }
-
-    pub fn get_memory(&self, address: u16) -> u8 {
-        self.cpu().io.read_byte(address)
-    }
-
-    pub fn memory_dump(&mut self, start: u16, end: u16) -> String {
-        hexdump(&self.ram(), start, end)
-    }
-
-    pub fn memory(&self) -> Vec<u8> {
-        self.ram()
-    }
-
-    pub fn vram_dump(&self) -> String {
-        let vdp = self.cpu().io.bus.borrow().vdp().clone();
-        hexdump(&vdp.vram, 0, 0x4000)
-    }
-
-    pub fn vdp(&self) -> TMS9918 {
-        self.cpu().io.bus.borrow().vdp().clone()
+        self.bus.halted()
     }
 
     pub fn step(&mut self) {
-        self.mut_cpu().step();
+        self.bus.step();
         self.current_scanline = (self.current_scanline + 1) % 192;
     }
 
     pub fn primary_slot_config(&self) -> u8 {
-        self.cpu().io.bus.borrow().primary_slot_config()
+        self.bus.primary_slot_config()
     }
 
-    pub fn memory_segments(&self) -> Vec<MemorySegment> {
-        self.cpu().io.bus.borrow().memory_segments()
+    pub fn display_mode(&self) -> DisplayMode {
+        self.bus.display_mode()
     }
 }
 
@@ -212,5 +130,76 @@ impl MachineBuilder {
 
     pub fn build(&self) -> Machine {
         Machine::new(&self.slots)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProgramEntry {
+    pub address: u16,
+    pub instruction: String,
+    pub data: String,
+    pub dump: Option<String>,
+}
+
+impl fmt::Display for ProgramEntry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{:04X}  {:<12}  {:<20} {}",
+            self.address,
+            self.data,
+            self.instruction,
+            self.dump.as_deref().unwrap_or("")
+        )
+    }
+}
+
+pub struct Io {
+    pub bus: Weak<RefCell<Bus>>,
+}
+
+impl Io {
+    pub fn new(bus: Weak<RefCell<Bus>>) -> Self {
+        Io { bus }
+    }
+}
+
+impl Z80_io for Io {
+    fn read_byte(&self, address: u16) -> u8 {
+        if let Some(bus) = self.bus.upgrade() {
+            if address == 0x1452 || address == 0x0d12 || address == 0x0c3c {
+                tracing::info!("[KEYBOARD] Reading from {:04X}", address);
+            }
+            bus.borrow().read_byte(address)
+        } else {
+            panic!("Bus is not available")
+        }
+    }
+
+    fn write_byte(&mut self, address: u16, value: u8) {
+        if let Some(bus) = self.bus.upgrade() {
+            if address == 0x1452 || address == 0x0d12 || address == 0x0c3c {
+                tracing::info!("[KEYBOARD] Writing to {:04X}", address);
+            }
+            bus.borrow_mut().write_byte(address, value)
+        } else {
+            panic!("Bus is not available")
+        }
+    }
+
+    fn port_in(&self, port: u16) -> u8 {
+        if let Some(bus) = self.bus.upgrade() {
+            bus.borrow_mut().input(port as u8)
+        } else {
+            panic!("Bus is not available")
+        }
+    }
+
+    fn port_out(&mut self, port: u16, value: u8) {
+        if let Some(bus) = self.bus.upgrade() {
+            bus.borrow_mut().output(port as u8, value)
+        } else {
+            panic!("Bus is not available")
+        }
     }
 }

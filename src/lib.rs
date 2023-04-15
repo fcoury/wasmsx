@@ -1,8 +1,8 @@
 pub mod bus;
+pub mod cpu;
 pub mod instruction;
 pub mod internal_state;
 pub mod machine;
-pub mod memory;
 pub mod ppi;
 pub mod renderer;
 pub mod slot;
@@ -65,30 +65,24 @@ impl JsMachine {
     }
 
     pub fn screen(&self) -> Vec<u8> {
-        let cpu = self.0.cpu();
-        let bus = cpu.io.bus.borrow();
-        let mut renderer = Renderer::new(bus.vdp());
-        renderer.draw();
-        renderer.screen_buffer.to_vec()
+        self.0.screen_buffer()
     }
 
     #[wasm_bindgen(getter)]
     pub fn vram(&self) -> Vec<u8> {
-        let cpu = self.0.cpu();
-        let bus = cpu.io.bus.borrow();
-        bus.vdp().vram.to_vec()
+        self.0.vram()
     }
 
-    #[wasm_bindgen(getter)]
-    pub fn text(&self) -> String {
-        let cpu = self.0.cpu();
-        let bus = cpu.io.bus.borrow();
-        let mut renderer = Renderer::new(bus.vdp());
-        renderer.as_text()
-    }
+    // #[wasm_bindgen(getter)]
+    // pub fn text(&self) -> String {
+    //     let cpu = self.0.cpu();
+    //     let bus = cpu.io.bus.borrow();
+    //     let mut renderer = Renderer::new(bus.vdp());
+    //     renderer.as_text()
+    // }
 
     #[wasm_bindgen(getter=displayMode)]
     pub fn display_mode(&self) -> String {
-        format!("{:?}", self.0.cpu().io.bus.borrow().vdp().display_mode)
+        format!("{:?}", self.0.display_mode())
     }
 }

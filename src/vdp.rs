@@ -1,24 +1,15 @@
 #![allow(dead_code)]
 
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Weak};
 
 use serde::{Deserialize, Serialize};
 use tracing::{error, info};
 
 use crate::bus::Bus;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
-pub struct Sprite {
-    pub x: u8,
-    pub y: u8,
-    pub pattern: u32,
-    pub color: u8,
-    pub collision: bool,
-}
-
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TMS9918 {
-    pub bus: Rc<RefCell<Bus>>,
+    pub bus: Option<Weak<RefCell<Bus>>>,
 
     // #[serde(with = "BigArray")]
     pub vram: [u8; 0x4000],
@@ -57,50 +48,8 @@ pub struct TMS9918 {
 }
 
 impl TMS9918 {
-    pub fn new(bus: Rc<RefCell<Bus>>) -> Self {
-        Self {
-            bus,
-            vram: [0; 0x4000],
-            data_pre_read: 0,
-            registers: [0; 8],
-            status: 0,
-            address: 0,
-            first_write: None,
-            screen_buffer: [0; 256 * 192],
-            sprites: [Sprite {
-                x: 0,
-                y: 0,
-                pattern: 0,
-                color: 0,
-                collision: false,
-            }; 8],
-            frame: 0,
-            line: 0,
-            vblank: false,
-            display_mode: DisplayMode::Text1,
-
-            f: 0,
-            fh: 0,
-
-            sprites_collided: false,
-            sprites_invalid: None,
-            sprites_max_computed: 0,
-
-            blink_per_line: false,
-            blink_even_page: false,
-            blink_page_duration: 0,
-            blanking_change_pending: false,
-
-            layout_table_address: 0,
-            layout_table_address_mask: 0,
-            layout_table_address_mask_set_value: 0,
-
-            color_table_address: 0,
-            color_table_address_mask: 0,
-
-            pattern_table_address: 0,
-            pattern_table_address_mask: 0,
-        }
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn reset(&mut self) {
@@ -131,6 +80,10 @@ impl TMS9918 {
         self.update_blinking();
         self.update_color_table_address();
         self.update_layout_table_address();
+    }
+
+    pub fn set_bus(&mut self, bus: Weak<RefCell<Bus>>) {
+        self.bus = Some(bus);
     }
 
     pub fn name_table_base_and_size(&self) -> (usize, usize) {
@@ -284,16 +237,20 @@ impl TMS9918 {
         res
     }
 
-    fn update_irq(&mut self) {
-        if self.f != 0 && self.registers[1] & 0x20 != 0
-            || self.fh != 0 && self.registers[0] & 0x10 != 0
-        {
-            // self.irq = true;
-            tracing::info!("IRQ ON");
-            // self.bus.interrupt(Interrupt::Vdp);
+    pub fn update_irq(&self) {
+        if let Some(bus) = self.bus.as_ref().and_then(Weak::upgrade) {
+            if self.f != 0 && self.registers[1] & 0x20 != 0
+                || self.fh != 0 && self.registers[0] & 0x10 != 0
+            {
+                // self.irq = true;
+                tracing::info!("IRQ ON");
+                bus.borrow_mut().set_irq(true);
+            } else {
+                tracing::info!("IRQ OFF");
+                bus.borrow_mut().set_irq(false);
+            }
         } else {
-            tracing::info!("IRQ OFF");
-            // self.irq = false;
+            panic!("No bus found")
         }
     }
 
@@ -816,6 +773,54 @@ impl TMS9918 {
     }
 }
 
+impl Default for TMS9918 {
+    fn default() -> Self {
+        Self {
+            bus: None,
+            vram: [0; 0x4000],
+            data_pre_read: 0,
+            registers: [0; 8],
+            status: 0,
+            address: 0,
+            first_write: None,
+            screen_buffer: [0; 256 * 192],
+            sprites: [Sprite {
+                x: 0,
+                y: 0,
+                pattern: 0,
+                color: 0,
+                collision: false,
+            }; 8],
+            frame: 0,
+            line: 0,
+            vblank: false,
+            display_mode: DisplayMode::Text1,
+
+            f: 0,
+            fh: 0,
+
+            sprites_collided: false,
+            sprites_invalid: None,
+            sprites_max_computed: 0,
+
+            blink_per_line: false,
+            blink_even_page: false,
+            blink_page_duration: 0,
+            blanking_change_pending: false,
+
+            layout_table_address: 0,
+            layout_table_address_mask: 0,
+            layout_table_address_mask_set_value: 0,
+
+            color_table_address: 0,
+            color_table_address_mask: 0,
+
+            pattern_table_address: 0,
+            pattern_table_address_mask: 0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum DisplayMode {
     Text1,      // screen 0 - 40x80 text
@@ -859,6 +864,15 @@ impl ModeData {
             text_cols,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Sprite {
+    pub x: u8,
+    pub y: u8,
+    pub pattern: u32,
+    pub color: u8,
+    pub collision: bool,
 }
 
 // modes[0x10] = { name:  "T1", colorTBase:        0, patTBase: -1 << 11, sprAttrTBase:        0, spriteMode: 0, textCols: 40 };

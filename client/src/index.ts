@@ -242,8 +242,8 @@ function main() {
       }
     }
 
-    if (e.code === "KeyD") {
-    }
+    // send the key to the emulated machine
+    // this.machine.keyPressed(e.);
 
     app.keyDown(e.code);
   });
