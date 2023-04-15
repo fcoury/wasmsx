@@ -5,14 +5,26 @@
   <meta charset="UTF-8">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script type="module" src="lib/index.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,100;0,200;0,400;1,100;1,200;1,400&family=Roboto:wght@100;300;400;500&display=swap"
+    rel="stylesheet">
   <link rel="stylesheet" href="index.css">
+  <script type="module" src="lib/index.js"></script>
   <title>RustMSX</title>
 </head>
 
-<body>
-  <div id="data"></div>
-  <canvas id="screen"></canvas>
+<body id="root">
+  <div class="container">
+    <div class="display">
+      <canvas id="screen"></canvas>
+    </div>
+    <div class="info">
+      <div id="state" class="state"></div>
+      <div id="vram" class="vram"></div>
+    </div>
+  </div>
 </body>
 
 </html>

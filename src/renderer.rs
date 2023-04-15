@@ -11,6 +11,20 @@ impl<'a> Renderer<'a> {
         Self { vdp, screen_buffer }
     }
 
+    pub fn as_text(&mut self) -> String {
+        let (base, size) = self.vdp.name_table_base_and_size();
+        let mut text = String::new();
+        for i in 0..size {
+            let c = self.vdp.vram[base + i];
+            if c == 0 {
+                text.push(' ');
+            } else {
+                text.push(c as char);
+            }
+        }
+        text
+    }
+
     pub fn draw(&mut self) {
         // TODO check for scroll delta
 
@@ -65,6 +79,8 @@ impl<'a> Renderer<'a> {
 
         // Calculate the base address of the PNT using register R#2
         let pnt_base = (self.vdp.registers[2] as usize & 0x0F) * 0x0400;
+        // let (pnt_base, _) = self.vdp.name_table_base_and_size();
+        // tracing::info!("PNT_BASE = {:#04X}", pnt_base as u16);
 
         let name_start = (line / 8) * 40;
         let name_end = name_start + 40;

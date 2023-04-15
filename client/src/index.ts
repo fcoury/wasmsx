@@ -23,7 +23,6 @@ const PALETTE = [
 
 class Renderer {
   private screen: HTMLCanvasElement;
-  private data: HTMLDivElement;
 
   private ctx: CanvasRenderingContext2D;
   private screenImageData: ImageData;
@@ -37,7 +36,6 @@ class Renderer {
    */
   constructor(screen: { width: number; height: number }) {
     this.screen = document.getElementById("screen") as HTMLCanvasElement;
-    this.data = document.getElementById("data") as HTMLDivElement;
 
     const ctx = this.screen.getContext("2d");
     if (!ctx) {
@@ -75,19 +73,6 @@ class Renderer {
     }
     this.ctx.putImageData(this.screenImageData, 0, 0);
   }
-
-  /**
-   * Renders the internal emulator data for debugging.
-   *
-   * @param {Object} data - The emulator data
-   * @param {number} data.pc - The program counter value
-   * @param {string} data.display_mode - The display mode
-   */
-  public renderData(data: { pc: number; display_mode: string }) {
-    this.data.innerText = `Display Mode: ${data.display_mode} PC: 0x${data.pc
-      .toString(16)
-      .padStart(4, "0")} `;
-  }
 }
 
 class App {
@@ -106,9 +91,9 @@ class App {
 
   /**
    * Handles keyDown events.
-   * @param {number} key - The key code
+   * @param {string} key - The key code
    */
-  public keyDown(key: number) {
+  public keyDown(key: string) {
     this.emulator.keyDown(key);
   }
 
@@ -118,29 +103,33 @@ class App {
    */
   public frame(dt: number) {
     if (dt > 0.2) {
-      // console.log(`${dt} seconds behind`);
+      console.log(`${dt} seconds behind`);
     } else {
       this.emulator.run(dt);
+      this.renderer.renderScreen(this.emulator.getScreen());
+      this.emulator.renderState();
+      this.emulator.renderVRAM();
     }
-    this.emulator.run(dt);
-    this.renderer.renderScreen(this.emulator.getScreen());
-    this.renderer.renderData(this.emulator.getData());
   }
 }
 
 class Emulator {
-  private keys: { [key: string]: boolean };
   private timeBudget: number;
   private machine: Machine;
+  private running: boolean;
+  private vram: HTMLDivElement;
+  private state: HTMLDivElement;
 
   /**
    * Constructs a new Emulator instance.
    * @param {Machine} machine - The Machine instance from the wasm module
    */
   constructor(machine: Machine) {
+    this.running = false;
     this.machine = machine;
     this.timeBudget = 0;
-    this.keys = {};
+    this.vram = document.getElementById("vram") as HTMLDivElement;
+    this.state = document.getElementById("state") as HTMLDivElement;
   }
 
   /**
@@ -152,10 +141,22 @@ class Emulator {
     const cycles = Math.floor(this.timeBudget * PROCESSOR_RATE);
     const cycleTime = cycles / PROCESSOR_RATE;
     this.timeBudget -= cycleTime;
+    this.machine.step_for(cycles);
+  }
 
-    for (let i = 0; i < cycles; i++) {
-      this.machine.step();
-    }
+  /**
+   * Toggles the emulator running state between running and paused.
+   */
+  public toggleRunning() {
+    this.running = !this.running;
+  }
+
+  /**
+   * Returns the emulator running state.
+   * @returns {boolean} The emulator running state
+   */
+  public isRunning(): boolean {
+    return this.running;
   }
 
   /**
@@ -166,20 +167,51 @@ class Emulator {
     return this.machine.screen();
   }
 
-  /**
-   * Returns the emulator debug data.
-   * @returns {Object} The emulator data
-   */
-  public getData(): { pc: number; display_mode: string } {
-    return { pc: this.machine.pc, display_mode: this.machine.display_mode };
+  public renderState() {
+    const { pc, displayMode } = this.machine;
+
+    this.state.innerHTML = `
+      <div class="stateitem">
+        <div class="stateitem--name">PC</div>
+        <div class="stateitem--value">${pc.toString(16).padStart(4, "0")}</div>
+      </div>
+      <div class="stateitem">
+        <div class="stateitem--name">Display Mode</div>
+        <div class="stateitem--value">${displayMode}</div>
+      </div>
+    `;
+  }
+
+  public renderVRAM() {
+    const { vram } = this.machine;
+
+    // hex dump of the vram
+    const rows = [];
+    for (let i = 0; i < vram.length; i += 16) {
+      const row = [];
+      const chars = [];
+      for (let j = 0; j < 16; j++) {
+        const value = vram[i + j] as number;
+        row.push(value.toString(16).padStart(2, "0"));
+        chars.push(
+          value >= 32 && value <= 126 ? String.fromCharCode(value) : "."
+        );
+      }
+      const addr = i.toString(16).padStart(4, "0");
+      rows.push(addr + ":  " + row.join(" ") + "  " + chars.join(""));
+    }
+
+    this.vram.innerHTML = `<pre>${rows
+      .map((row) => `<div>${row}</div>`)
+      .join("")}</pre>`;
   }
 
   /**
    * Handles keyDown events.
-   * @param {number} key - The key code
+   * @param {string} key - The key code
    */
-  public keyDown(key: number) {
-    // this.machine.key_down(key);
+  public keyDown(key: string) {
+    console.log("key", key);
   }
 }
 
@@ -195,12 +227,33 @@ function main() {
   const app = new App(renderer, emulator);
   let lastTime = Date.now();
 
+  window.addEventListener("keyup", (e) => {
+    if (e.which >= 37 && e.which <= 40) {
+      e.preventDefault();
+    }
+
+    if (e.code === "Escape") {
+      emulator.toggleRunning();
+      if (emulator.isRunning()) {
+        requestAnimationFrame(frame);
+      }
+    }
+
+    if (e.code === "KeyD") {
+    }
+
+    app.keyDown(e.code);
+  });
+
   const frame = () => {
     const now = Date.now();
     const dt = (now - lastTime) / 1000;
     lastTime = now;
     app.frame(dt);
-    requestAnimationFrame(frame);
+
+    if (emulator.isRunning()) {
+      requestAnimationFrame(frame);
+    }
   };
 
   requestAnimationFrame(frame);

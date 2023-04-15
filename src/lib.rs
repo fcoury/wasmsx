@@ -58,6 +58,12 @@ impl JsMachine {
         self.0.step();
     }
 
+    pub fn step_for(&mut self, n: usize) {
+        for _ in 0..n {
+            self.0.step();
+        }
+    }
+
     pub fn screen(&self) -> Vec<u8> {
         let bus = self.0.cpu.io.bus.borrow();
         let mut renderer = Renderer::new(&bus.vdp);
@@ -66,6 +72,19 @@ impl JsMachine {
     }
 
     #[wasm_bindgen(getter)]
+    pub fn vram(&self) -> Vec<u8> {
+        let bus = self.0.cpu.io.bus.borrow();
+        bus.vdp.vram.to_vec()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn text(&self) -> String {
+        let bus = self.0.cpu.io.bus.borrow();
+        let mut renderer = Renderer::new(&bus.vdp);
+        renderer.as_text()
+    }
+
+    #[wasm_bindgen(getter=displayMode)]
     pub fn display_mode(&self) -> String {
         format!("{:?}", self.0.cpu.io.bus.borrow().vdp.display_mode)
     }
