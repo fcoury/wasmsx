@@ -65,27 +65,30 @@ impl JsMachine {
     }
 
     pub fn screen(&self) -> Vec<u8> {
-        let bus = self.0.cpu.io.bus.borrow();
-        let mut renderer = Renderer::new(&bus.vdp);
+        let cpu = self.0.cpu();
+        let bus = cpu.io.bus.borrow();
+        let mut renderer = Renderer::new(bus.vdp());
         renderer.draw();
         renderer.screen_buffer.to_vec()
     }
 
     #[wasm_bindgen(getter)]
     pub fn vram(&self) -> Vec<u8> {
-        let bus = self.0.cpu.io.bus.borrow();
-        bus.vdp.vram.to_vec()
+        let cpu = self.0.cpu();
+        let bus = cpu.io.bus.borrow();
+        bus.vdp().vram.to_vec()
     }
 
     #[wasm_bindgen(getter)]
     pub fn text(&self) -> String {
-        let bus = self.0.cpu.io.bus.borrow();
-        let mut renderer = Renderer::new(&bus.vdp);
+        let cpu = self.0.cpu();
+        let bus = cpu.io.bus.borrow();
+        let mut renderer = Renderer::new(bus.vdp());
         renderer.as_text()
     }
 
     #[wasm_bindgen(getter=displayMode)]
     pub fn display_mode(&self) -> String {
-        format!("{:?}", self.0.cpu.io.bus.borrow().vdp.display_mode)
+        format!("{:?}", self.0.cpu().io.bus.borrow().vdp().display_mode)
     }
 }

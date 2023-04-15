@@ -1,13 +1,15 @@
-use std::fmt;
+use std::{cell::RefCell, fmt, rc::Rc};
 
-use derivative::Derivative;
 use serde::{Deserialize, Serialize};
 use tracing::error;
 use wasm_bindgen::prelude::wasm_bindgen;
-use z80::Z80_io;
+use z80::{Z80_io, Z80};
 
 use super::{ppi::Ppi, sound::AY38910, vdp::TMS9918};
-use crate::slot::{RamSlot, RomSlot, SlotType};
+use crate::{
+    machine::Io,
+    slot::{RamSlot, RomSlot, SlotType},
+};
 
 #[wasm_bindgen]
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, Eq, PartialEq)]
@@ -28,32 +30,24 @@ impl fmt::Display for MemorySegment {
     }
 }
 
-#[derive(Derivative, Clone, Serialize, Deserialize)]
-#[derivative(Debug, PartialEq)]
 pub struct Bus {
-    slot_count: u8,
-
     // I/O Devices
-    pub vdp: TMS9918,
+    pub vdp: Option<Box<TMS9918>>,
     pub psg: AY38910,
     pub ppi: Ppi,
+    pub cpu: Option<Rc<RefCell<Z80<Io>>>>,
 
-    vdp_io_clock: u8,
     slots: [SlotType; 4],
-
     wrote_to_ppi: bool,
 }
 
 impl Default for Bus {
     fn default() -> Self {
-        let slot_count = 4;
-
         Self {
-            slot_count,
-            vdp: TMS9918::new(),
+            vdp: None,
+            cpu: None,
             psg: AY38910::new(),
             ppi: Ppi::new(),
-            vdp_io_clock: 0,
             slots: [
                 SlotType::Empty,
                 SlotType::Empty,
@@ -66,36 +60,42 @@ impl Default for Bus {
 }
 
 impl Bus {
-    pub fn new(slots: &[SlotType]) -> Self {
-        Self {
-            slot_count: 4,
-            vdp: TMS9918::new(),
-            psg: AY38910::new(),
-            ppi: Ppi::new(),
-            vdp_io_clock: 0,
+    pub fn new(slots: &[SlotType]) -> Rc<RefCell<Self>> {
+        let bus = Rc::new(RefCell::new(Bus {
             slots: [
                 slots.get(0).unwrap().clone(),
                 slots.get(1).unwrap().clone(),
                 slots.get(2).unwrap().clone(),
                 slots.get(3).unwrap().clone(),
             ],
-            wrote_to_ppi: false,
-        }
+            ..Default::default()
+        }));
+
+        bus.borrow_mut().vdp = Some(Box::new(TMS9918::new(bus.clone())));
+        bus
     }
 
     pub fn mem_size(&self) -> usize {
         0x10000
     }
 
+    pub fn vdp(&self) -> &TMS9918 {
+        self.vdp.as_ref().unwrap()
+    }
+
+    pub fn mut_vdp(&mut self) -> &mut TMS9918 {
+        self.vdp.as_mut().unwrap()
+    }
+
     pub fn reset(&mut self) {
-        self.vdp.reset();
+        self.mut_vdp().reset();
         self.psg.reset();
         self.ppi.reset();
     }
 
     pub fn input(&mut self, port: u8) -> u8 {
         match port {
-            0x98 | 0x99 => self.vdp.read(port),
+            0x98 | 0x99 => self.mut_vdp().read(port),
             0xA0 | 0xA1 => self.psg.read(port),
             0xA8 | 0xA9 | 0xAA | 0xAB => self.ppi.read(port),
             _ => {
@@ -107,7 +107,7 @@ impl Bus {
 
     pub fn output(&mut self, port: u8, data: u8) {
         match port {
-            0x98 | 0x99 => self.vdp.write(port, data),
+            0x98 | 0x99 => self.mut_vdp().write(port, data),
             0xA0 | 0xA1 => self.psg.write(port, data),
             0xA8 | 0xA9 | 0xAA | 0xAB => {
                 self.wrote_to_ppi = true;
@@ -256,12 +256,13 @@ mod tests {
 
     #[test]
     fn test_slot_definition() {
-        let mut bus = Bus::new(&[
+        let bus = Bus::new(&[
             SlotType::Rom(RomSlot::new(&[0; 0x8000], 0x0000, 0x8000)),
             SlotType::Empty,
             SlotType::Empty,
             SlotType::Ram(RamSlot::new(0x0000, 0x10000)),
         ]);
+        let mut bus = bus.borrow_mut();
 
         bus.ppi.primary_slot_config = 0b00_11_00_00;
         let segments = bus.memory_segments();
@@ -345,12 +346,13 @@ mod tests {
 
     #[test]
     fn test_address_translation() {
-        let mut bus = Bus::new(&[
+        let bus = Bus::new(&[
             SlotType::Rom(RomSlot::new(&[0; 0x8000], 0x0000, 0x8000)),
             SlotType::Empty,
             SlotType::Empty,
             SlotType::Ram(RamSlot::new(0x0000, 0xFFFF)),
         ]);
+        let mut bus = bus.borrow_mut();
 
         bus.ppi.primary_slot_config = 0b00_11_00_00;
         assert_eq!(bus.translate_address(0x0000), (0, 0x0000));
