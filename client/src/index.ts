@@ -42,6 +42,9 @@ class Renderer {
       throw new Error("Could not get canvas context");
     }
 
+    this.screen.width = screen.width;
+    this.screen.height = screen.height;
+
     this.ctx = ctx;
     this.screenImageData = this.ctx.createImageData(
       screen.width,
@@ -71,6 +74,7 @@ class Renderer {
         pixels.set(colorBytes, colorOffset * 4);
       }
     }
+
     this.ctx.putImageData(this.screenImageData, 0, 0);
   }
 }
