@@ -69,10 +69,10 @@ impl<'a> Renderer<'a> {
     }
 
     pub fn render_text1(&mut self, line: usize) {
-        // let fg = self.vdp.registers[7] & 0xF0;
-        // let bg = self.vdp.registers[7] & 0x0F;
-        let fg = 15;
-        let bg = 1;
+        let fg = self.vdp.registers[7] & 0xF0;
+        let bg = self.vdp.registers[7] & 0x0F;
+        // let fg = 15;
+        // let bg = 1;
 
         let caracter_pattern_area = self.vdp.char_pattern_table();
         let l = (line + self.vdp.get_vertical_scroll()) & 7;

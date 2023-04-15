@@ -142,8 +142,10 @@ impl TMS9918 {
 
     pub fn color_table(&self) -> &[u8] {
         // Calculate the base address of the color table using register R#3
-        // let ct_base = (self.registers[3] as usize & 0x7F) * 0x040;
+        let ct_base = (self.registers[3] as usize & 0x7F) * 0x040;
+        info!("[VDP] calculated color table base_address: {:04X}", ct_base);
         let ct_base = 0x2000;
+        info!("[VDP] color table base_address: {:04X}", ct_base);
         let ct_table_size = 6 * 1027; // 6k
                                       // tracing::info!("color table base_address: {:04X}", ct_base);
         &self.vram[ct_base..(ct_base + ct_table_size)]
@@ -182,23 +184,17 @@ impl TMS9918 {
     }
 
     fn write_98(&mut self, data: u8) {
-        // if data.is_ascii_graphic() {
-        //     info!(
-        //         "[VDP] Port: 98 | Address: {:04X} | Data: 0x{:02X} ({}).",
-        //         self.address, data, data as char
-        //     );
-        // }
+        // info!(
+        //     "[VDP] Write 0x{:04x}: {:02x} [{}]",
+        //     self.address,
+        //     data,
+        //     if data.is_ascii_graphic() {
+        //         data as char
+        //     } else {
+        //         '.'
+        //     }
+        // );
 
-        info!(
-            "[VDP] Write 0x{:04x}: {:02x} [{}]",
-            self.address,
-            data,
-            if data.is_ascii_graphic() {
-                data as char
-            } else {
-                '.'
-            }
-        );
         self.vram[self.address as usize] = data;
         self.data_pre_read = data;
         self.address = (self.address + 1) & 0x3FFF;
@@ -364,14 +360,23 @@ impl TMS9918 {
             }
             3 => {
                 info!(
-                    "[VDP] 3 - Update pattern table address | Reg: {} | Value: 0x{:02X}",
+                    "[VDP] 3 - Update color table base address | Reg: {} | Value: 0x{:02X}",
                     reg, value
                 );
+
+                // Mode Register 3 defines the starting address of the Colour Table in the VDP VRAM.
+                // The eight available bits only specify positions 00BB BBBB BB00 0000 of the full
+                // address so register contents of FFH would result in a base address of 3FC0H. In
+                // Graphics Mode only bit 7 is effective thus offering a base of 0000H or 2000H.
+                // Bits 0 to 6 must be 1.
+
                 // Update pattern table address
                 // TODO WebMSX
                 // add = ((register[10] << 14) | (register[3] << 6)) & 0x1ffff;
                 // colorTableAddress = add & modeData.colorTBase;
                 // colorTableAddressMask = add | colorTableAddressMaskBase;
+
+                // PatternNameTableAddress = (value << 10) & 0x3fff;
             }
             4 => {
                 if modified & 0x3f != 0 {
@@ -414,13 +419,26 @@ impl TMS9918 {
             }
             7 => {
                 // BD
-                info!(
-                    "[VDP] 7 - Update backdrop color | Reg: {} | Value: 0x{:02X}",
-                    reg, value
-                );
+                let fg = value & 0xF0;
+                let bg = value & 0x0F;
+
+                info!("[VDP] 7 - Update backdrop color | FG: {} | BG: {}", fg, bg);
+
                 // Update backdrop color
                 // Implement the functionality based on the WebMSX code
                 // if (mod & (modeData.bdPaletted ? 0x0f : 0xff)) updateBackdropColor();  // BD
+
+                // var newTextColor = (byte)(value >> 4);
+                // var newBackdropColor = (byte)(value & 0x0F);
+
+                // if (newBackdropColor != backdropColor)
+                //     displayRenderer.SetBackdropColor(newBackdropColor);
+                // if(newTextColor != textColor)
+                //     displayRenderer.SetTextColor(newTextColor);
+
+                // backdropColor = newBackdropColor;
+                // textColor = newTextColor;
+                // break;
             }
             8 => {
                 if modified & 0x20 != 0 {
@@ -576,21 +594,16 @@ impl TMS9918 {
 
         let Some(data_first_write) = self.first_write else {
             self.first_write = Some(val);
-            info!(
-                "[VDP] Setting latched value: 0x{:02X}",
-                val
-            );
-            info!("");
             self.address = (self.address & !0xFF) | val as u16;
             return;
         };
 
         // 1000 0000
         if val & 0x80 != 0 {
-            info!(
-                "[VDP] Write Register: {:02X} <- Latched Value: {:02X}",
-                val, data_first_write,
-            );
+            // info!(
+            //     "[VDP] Write Register: {:02X} <- Latched Value: {:02X}",
+            //     val, data_first_write,
+            // );
             // Set register
             // info!("[VDP] Set register: {:02X}", data);
             // let reg = data & 0x07;
@@ -602,46 +615,29 @@ impl TMS9918 {
             info!("[VDP] registers[{:02X}] = {:02X}", reg, data_first_write);
             self.write_register(reg, data_first_write);
 
-            let before = self.address;
+            // let before = self.address;
 
             // On V9918, the VRAM pointer high gets also written when writing to registers
             self.address =
                 ((self.address & 0x00FF) | ((data_first_write as u16 & 0x03F) << 8)) & 0x3FFF;
-            info!(
-                "[VDP] Also setting high part of the address to {:02X}. Address 0x{:04x} -> 0x{:04x}",
-                data_first_write, before, self.address
-            );
+            // info!(
+            //     "[VDP] Also setting high part of the address to {:02X}. Address 0x{:04x} -> 0x{:04x}",
+            //     data_first_write, before, self.address
+            // );
             info!("");
         } else {
             // Set VRAM pointer
             // info!(
             //     "[VDP] Latched value: 0x{:02X}. Received: 0x{:02X}",
-            //     val, data
+            //     data_first_write, val
             // );
-            // self.address = ((((self.address as u32) & 0x1C000) | (((val as u32) & 0x3F) << 8))
-            //     & 0x3FFF) as u16;
-            // info!("[VDP] Current address: 0x{:04X}", self.address);
-            // info!("");
 
-            // if val & 0x40 == 0 {
-            //     self.data_pre_read = self.vram[self.address as usize];
-            //     self.address_wrapping_inc();
-            // }
+            // let before = self.address;
 
-            info!(
-                "[VDP] Latched value: 0x{:02X}. Received: 0x{:02X}",
-                data_first_write, val
-            );
-
-            let before = self.address;
-
-            // VRAM Address Pointer middle (A13-A8). Finish VRAM Address Pointer setting
-            // self.address = (self.address & 0x7000)
-            //     | (((val & 0x3f) as u16) << 8)
-            //     | (data_first_write as u16) & 0x3FFF;
             self.address = (((val & 0x3f) as u16) << 8) | (data_first_write as u16) & 0x3FFF;
-            info!("[VDP] Address 0x{:04x} -> 0x{:04x}", before, self.address);
-            info!("");
+
+            // info!("[VDP] Address 0x{:04x} -> 0x{:04x}", before, self.address);
+            // info!("");
 
             // Pre-read VRAM if "WriteMode = 0"
             if (val & 0x40) == 0 {
