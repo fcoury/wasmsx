@@ -8,5 +8,12 @@
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,
     "outDir": "lib"
-  }
+  },
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "**/pkg",
+    "**/lib"
+  ]
 }

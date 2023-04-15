@@ -1,0 +1,29 @@
+[tasks.build]
+args = ["build", "--target", "web", "--out-dir", "client/pkg"]
+command = "wasm-pack"
+
+[tasks.watch]
+args = ["watch", "-i", ".gitignore", "-i", "client/*", "-s", "wasm-pack build --target web --out-dir client/pkg"]
+command = "cargo"
+
+[tasks.build-client]
+args = ["build"]
+command = "yarn"
+cwd = "client"
+
+[tasks.watch-client]
+cwd = "client"
+script = '''
+yarn tsc -w -p "${CARGO_MAKE_CURRENT_TASK_INITIAL_MAKEFILE_DIRECTORY}/client/tsconfig.json" | awk '{gsub(/\033c/,"") system("")}1'
+'''
+
+[tasks.serve-client]
+args = ["serve"]
+command = "yarn"
+cwd = "client"
+
+[tasks.client-dev]
+run_task = {name = ["watch-client", "serve-client"], fork = true, parallel = true, exit_on_error = true}
+
+[tasks.dev]
+run_task = {name = ["watch", "client-dev"], fork = true, parallel = true, exit_on_error = true}
