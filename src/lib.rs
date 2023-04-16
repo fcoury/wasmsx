@@ -1,5 +1,4 @@
 pub mod bus;
-pub mod cpu;
 pub mod instruction;
 pub mod internal_state;
 pub mod machine;

@@ -39,13 +39,14 @@ const PULSE: u32 = 1;
 pub trait Z80_io {
     fn read_byte(&self, addr: u16) -> u8;
     fn write_byte(&mut self, addr: u16, value: u8);
-    fn port_in(&self, _addr: u16) -> u8 { 0xff }
-    fn port_out(&mut self, _addr: u16, _value: u8) { }
+    fn port_in(&self, _addr: u16) -> u8 {
+        0xff
+    }
+    fn port_out(&mut self, _addr: u16, _value: u8) {}
 }
 
 /// Z80 CPU
-pub struct Z80 <T: Z80_io> {
-    pub io: T,
+pub struct Z80 {
     pub pc: uint16_t,
     pub sp: uint16_t,
     pub ix: uint16_t,
@@ -73,38 +74,37 @@ pub struct Z80 <T: Z80_io> {
     pub test_finished: bool,
 }
 
-impl<T: Z80_io> Z80<T> {
-    pub fn new(io: T) -> Self {
+impl Z80 {
+    pub fn new() -> Self {
         Z80 {
-            io,
             pc: 0,
             sp: 0,
             ix: 0,
             iy: 0,
             mem_ptr: 0,
             c2rust_unnamed: C2RustUnnamed_14 {
-                c2rust_unnamed: C2RustUnnamed_15 { f: 0, a: 0, },
+                c2rust_unnamed: C2RustUnnamed_15 { f: 0, a: 0 },
             },
             c2rust_unnamed_0: C2RustUnnamed_12 {
-                c2rust_unnamed: C2RustUnnamed_13 { c: 0, b: 0, },
+                c2rust_unnamed: C2RustUnnamed_13 { c: 0, b: 0 },
             },
             c2rust_unnamed_1: C2RustUnnamed_10 {
-                c2rust_unnamed: C2RustUnnamed_11 { e: 0, d: 0, },
+                c2rust_unnamed: C2RustUnnamed_11 { e: 0, d: 0 },
             },
             c2rust_unnamed_2: C2RustUnnamed_8 {
-                c2rust_unnamed: C2RustUnnamed_9 { l: 0, h: 0, },
+                c2rust_unnamed: C2RustUnnamed_9 { l: 0, h: 0 },
             },
             c2rust_unnamed_3: C2RustUnnamed_6 {
-                c2rust_unnamed: C2RustUnnamed_7 { f_: 0, a_: 0, },
+                c2rust_unnamed: C2RustUnnamed_7 { f_: 0, a_: 0 },
             },
             c2rust_unnamed_4: C2RustUnnamed_4 {
-                c2rust_unnamed: C2RustUnnamed_5 { c_: 0, b_: 0, },
+                c2rust_unnamed: C2RustUnnamed_5 { c_: 0, b_: 0 },
             },
             c2rust_unnamed_5: C2RustUnnamed_2 {
-                c2rust_unnamed: C2RustUnnamed_3 { e_: 0, d_: 0, },
+                c2rust_unnamed: C2RustUnnamed_3 { e_: 0, d_: 0 },
             },
             c2rust_unnamed_6: C2RustUnnamed_0 {
-                c2rust_unnamed: C2RustUnnamed_1 { l_: 0, h_: 0, },
+                c2rust_unnamed: C2RustUnnamed_1 { l_: 0, h_: 0 },
             },
             i: 0,
             r: 0,
@@ -149,38 +149,40 @@ impl<T: Z80_io> Z80<T> {
             self.test_finished = false;
         }
     }
-    fn internal_port_in(&self, addr: u16) -> u8 {
+    fn internal_port_in(&self, addr: u16, io: &mut impl Z80_io) -> u8 {
         #[cfg(test)]
         unsafe {
             let mut operation = self.c2rust_unnamed_0.c2rust_unnamed.c;
-            if operation == 2{
-                print!( "{}", self.c2rust_unnamed_1.c2rust_unnamed.e);
+            if operation == 2 {
+                print!("{}", self.c2rust_unnamed_1.c2rust_unnamed.e);
             } else if operation == 9 {
-                let mut addr = ((self.c2rust_unnamed_1.c2rust_unnamed.d as i32)
-                    << 8 as i32 | self.c2rust_unnamed_1.c2rust_unnamed.e as i32)
+                let mut addr = ((self.c2rust_unnamed_1.c2rust_unnamed.d as i32) << 8 as i32
+                    | self.c2rust_unnamed_1.c2rust_unnamed.e as i32)
                     as u16;
                 loop {
                     let fresh0 = addr;
                     addr = addr.wrapping_add(1);
-                    print!("{}", String::from_utf8(vec![self.io.read_byte(fresh0)]).unwrap());
+                    print!(
+                        "{}",
+                        String::from_utf8(vec![self.io.read_byte(fresh0)]).unwrap()
+                    );
                     if !(self.io.read_byte(addr) as i32 != '$' as i32 as i32) {
                         break;
                     }
                 }
             }
-
         }
-        self.io.port_in(addr)
+        io.port_in(addr)
     }
-    fn internal_port_out(&mut self, addr: u16, value: u8) {
+    fn internal_port_out(&mut self, addr: u16, value: u8, io: &mut impl Z80_io) {
         #[cfg(test)]
         {
             self.test_finished = true;
         }
-        self.io.port_out(addr, value);
+        io.port_out(addr, value);
     }
-    pub fn step(&mut self) -> u32 {
-        unsafe { step_s(self) }
+    pub fn step(&mut self, io: &mut impl Z80_io) -> u32 {
+        unsafe { step_s(self, io) }
     }
     pub fn reset(&mut self) {
         self.pc = 0 as i32 as uint16_t;
@@ -196,28 +198,20 @@ impl<T: Z80_io> Z80<T> {
     }
 
     pub fn assert_irq(&mut self, mut data: uint8_t) {
-        self
-            .irq_pending = (self.irq_pending as i32 | ASSERT as i32)
-            as uint8_t;
+        self.irq_pending = (self.irq_pending as i32 | ASSERT as i32) as uint8_t;
         self.irq_data = data;
     }
     pub fn assert_nmi(&mut self) {
-        self
-            .nmi_pending = (self.nmi_pending as i32 | ASSERT as i32)
-            as uint8_t;
+        self.nmi_pending = (self.nmi_pending as i32 | ASSERT as i32) as uint8_t;
     }
     pub fn pulse_nmi(&mut self) {
-        self
-            .nmi_pending = (self.nmi_pending as i32 | PULSE as i32)
-            as uint8_t;
+        self.nmi_pending = (self.nmi_pending as i32 | PULSE as i32) as uint8_t;
     }
     pub fn clr_nmi(&mut self) {
         self.nmi_pending = 0 as i32 as uint8_t;
     }
     pub fn pulse_irq(&mut self, mut data: uint8_t) {
-        self
-            .irq_pending = (self.irq_pending as i32 | PULSE as i32)
-            as uint8_t;
+        self.irq_pending = (self.irq_pending as i32 | PULSE as i32) as uint8_t;
         self.irq_data = data;
     }
     pub fn clr_irq(&mut self) {
@@ -331,79 +325,83 @@ const pf: Flagbit = 2;
 const nf: Flagbit = 1;
 const cf: Flagbit = 0;
 static mut f_szpxy: [uint8_t; 256] = [
-    0x44, 0, 0, 0x4, 0, 0x4, 0x4, 0, 0x8, 0xc, 0xc, 0x8, 0xc, 0x8, 0x8, 0xc, 0, 0x4, 0x4, 0, 0x4, 0, 0, 0x4, 0xc, 0x8, 0x8, 0xc, 0x8, 0xc, 0xc, 0x8, 0x20, 0x24, 0x24, 0x20, 0x24, 0x20, 0x20, 0x24, 0x2c, 0x28, 0x28, 0x2c, 0x28, 0x2c, 0x2c, 0x28, 0x24, 0x20, 0x20, 0x24, 0x20, 0x24, 0x24, 0x20, 0x28, 0x2c, 0x2c, 0x28, 0x2c, 0x28, 0x28, 0x2c, 0, 0x4, 0x4, 0, 0x4, 0, 0, 0x4, 0xc, 0x8, 0x8, 0xc, 0x8, 0xc, 0xc, 0x8, 0x4, 0, 0, 0x4, 0, 0x4, 0x4, 0, 0x8, 0xc, 0xc, 0x8, 0xc, 0x8, 0x8, 0xc, 0x24, 0x20, 0x20, 0x24, 0x20, 0x24, 0x24, 0x20, 0x28, 0x2c, 0x2c, 0x28, 0x2c, 0x28, 0x28, 0x2c, 0x20, 0x24, 0x24, 0x20, 0x24, 0x20, 0x20, 0x24, 0x2c, 0x28, 0x28, 0x2c, 0x28, 0x2c, 0x2c, 0x28, 0x80, 0x84, 0x84, 0x80, 0x84, 0x80, 0x80, 0x84, 0x8c, 0x88, 0x88, 0x8c, 0x88, 0x8c, 0x8c, 0x88, 0x84, 0x80, 0x80, 0x84, 0x80, 0x84, 0x84, 0x80, 0x88, 0x8c, 0x8c, 0x88, 0x8c, 0x88, 0x88, 0x8c, 0xa4, 0xa0, 0xa0, 0xa4, 0xa0, 0xa4, 0xa4, 0xa0, 0xa8, 0xac, 0xac, 0xa8, 0xac, 0xa8, 0xa8, 0xac, 0xa0, 0xa4, 0xa4, 0xa0, 0xa4, 0xa0, 0xa0, 0xa4, 0xac, 0xa8, 0xa8, 0xac, 0xa8, 0xac, 0xac, 0xa8, 0x84, 0x80, 0x80, 0x84, 0x80, 0x84, 0x84, 0x80, 0x88, 0x8c, 0x8c, 0x88, 0x8c, 0x88, 0x88, 0x8c, 0x80, 0x84, 0x84, 0x80, 0x84, 0x80, 0x80, 0x84, 0x8c, 0x88, 0x88, 0x8c, 0x88, 0x8c, 0x8c, 0x88, 0xa0, 0xa4, 0xa4, 0xa0, 0xa4, 0xa0, 0xa0, 0xa4, 0xac, 0xa8, 0xa8, 0xac, 0xa8, 0xac, 0xac, 0xa8, 0xa4, 0xa0, 0xa0, 0xa4, 0xa0, 0xa4, 0xa4, 0xa0, 0xa8, 0xac, 0xac, 0xa8, 0xac, 0xa8, 0xa8, 0xac,
+    0x44, 0, 0, 0x4, 0, 0x4, 0x4, 0, 0x8, 0xc, 0xc, 0x8, 0xc, 0x8, 0x8, 0xc, 0, 0x4, 0x4, 0, 0x4,
+    0, 0, 0x4, 0xc, 0x8, 0x8, 0xc, 0x8, 0xc, 0xc, 0x8, 0x20, 0x24, 0x24, 0x20, 0x24, 0x20, 0x20,
+    0x24, 0x2c, 0x28, 0x28, 0x2c, 0x28, 0x2c, 0x2c, 0x28, 0x24, 0x20, 0x20, 0x24, 0x20, 0x24, 0x24,
+    0x20, 0x28, 0x2c, 0x2c, 0x28, 0x2c, 0x28, 0x28, 0x2c, 0, 0x4, 0x4, 0, 0x4, 0, 0, 0x4, 0xc, 0x8,
+    0x8, 0xc, 0x8, 0xc, 0xc, 0x8, 0x4, 0, 0, 0x4, 0, 0x4, 0x4, 0, 0x8, 0xc, 0xc, 0x8, 0xc, 0x8,
+    0x8, 0xc, 0x24, 0x20, 0x20, 0x24, 0x20, 0x24, 0x24, 0x20, 0x28, 0x2c, 0x2c, 0x28, 0x2c, 0x28,
+    0x28, 0x2c, 0x20, 0x24, 0x24, 0x20, 0x24, 0x20, 0x20, 0x24, 0x2c, 0x28, 0x28, 0x2c, 0x28, 0x2c,
+    0x2c, 0x28, 0x80, 0x84, 0x84, 0x80, 0x84, 0x80, 0x80, 0x84, 0x8c, 0x88, 0x88, 0x8c, 0x88, 0x8c,
+    0x8c, 0x88, 0x84, 0x80, 0x80, 0x84, 0x80, 0x84, 0x84, 0x80, 0x88, 0x8c, 0x8c, 0x88, 0x8c, 0x88,
+    0x88, 0x8c, 0xa4, 0xa0, 0xa0, 0xa4, 0xa0, 0xa4, 0xa4, 0xa0, 0xa8, 0xac, 0xac, 0xa8, 0xac, 0xa8,
+    0xa8, 0xac, 0xa0, 0xa4, 0xa4, 0xa0, 0xa4, 0xa0, 0xa0, 0xa4, 0xac, 0xa8, 0xa8, 0xac, 0xa8, 0xac,
+    0xac, 0xa8, 0x84, 0x80, 0x80, 0x84, 0x80, 0x84, 0x84, 0x80, 0x88, 0x8c, 0x8c, 0x88, 0x8c, 0x88,
+    0x88, 0x8c, 0x80, 0x84, 0x84, 0x80, 0x84, 0x80, 0x80, 0x84, 0x8c, 0x88, 0x88, 0x8c, 0x88, 0x8c,
+    0x8c, 0x88, 0xa0, 0xa4, 0xa4, 0xa0, 0xa4, 0xa0, 0xa0, 0xa4, 0xac, 0xa8, 0xa8, 0xac, 0xa8, 0xac,
+    0xac, 0xa8, 0xa4, 0xa0, 0xa0, 0xa4, 0xa0, 0xa4, 0xa4, 0xa0, 0xa8, 0xac, 0xac, 0xa8, 0xac, 0xa8,
+    0xa8, 0xac,
 ];
 #[inline]
 unsafe fn flag_val(mut bit: Flagbit, mut cond: bool) -> uint8_t {
     return ((cond as i32) << bit as u32) as uint8_t;
 }
 #[inline]
-unsafe fn flag_get<T: Z80_io>(z: *mut Z80<T>, mut bit: Flagbit) -> bool {
-    return (*z).c2rust_unnamed.c2rust_unnamed.f as i32
-        & (1 as i32) << bit as u32 != 0;
+unsafe fn flag_get(z: *mut Z80, mut bit: Flagbit) -> bool {
+    return (*z).c2rust_unnamed.c2rust_unnamed.f as i32 & (1 as i32) << bit as u32 != 0;
 }
 #[inline]
-unsafe fn flag_set<T: Z80_io>(z: *mut Z80<T>, mut bit: Flagbit, mut val: bool) {
-    (*z)
-        .c2rust_unnamed
-        .c2rust_unnamed
-        .f = ((*z).c2rust_unnamed.c2rust_unnamed.f as i32
-        & !((1 as i32) << bit as u32)) as uint8_t;
-    (*z)
-        .c2rust_unnamed
-        .c2rust_unnamed
-        .f = ((*z).c2rust_unnamed.c2rust_unnamed.f as i32
-        | (val as i32) << bit as u32) as uint8_t;
+unsafe fn flag_set(z: *mut Z80, mut bit: Flagbit, mut val: bool) {
+    (*z).c2rust_unnamed.c2rust_unnamed.f =
+        ((*z).c2rust_unnamed.c2rust_unnamed.f as i32 & !((1 as i32) << bit as u32)) as uint8_t;
+    (*z).c2rust_unnamed.c2rust_unnamed.f =
+        ((*z).c2rust_unnamed.c2rust_unnamed.f as i32 | (val as i32) << bit as u32) as uint8_t;
 }
 #[inline]
-unsafe fn rb<T: Z80_io>(z: *mut Z80<T>, mut addr: uint16_t) -> uint8_t {
-    return (*z).io.read_byte(addr);
+unsafe fn rb(mut addr: uint16_t, io: &mut impl Z80_io) -> uint8_t {
+    return io.read_byte(addr);
 }
 #[inline]
-unsafe fn wb<T: Z80_io>(z: *mut Z80<T>, mut addr: uint16_t, mut val: uint8_t) {
-    (*z).io.write_byte(addr, val);
+unsafe fn wb(mut addr: uint16_t, mut val: uint8_t, mut io: &mut impl Z80_io) {
+    io.write_byte(addr, val);
 }
 #[inline]
-unsafe fn rw<T: Z80_io>(z: *mut Z80<T>, mut addr: uint16_t) -> uint16_t {
-    return (
-        ((*z).io.read_byte((addr as i32 + 1 as i32) as uint16_t) as i32) << 8 as i32
-        | (*z).io.read_byte(addr) as i32
-    ) as uint16_t;
+unsafe fn rw(mut addr: uint16_t, io: &mut impl Z80_io) -> uint16_t {
+    return ((io.read_byte((addr as i32 + 1 as i32) as uint16_t) as i32) << 8 as i32
+        | io.read_byte(addr) as i32) as uint16_t;
 }
 #[inline]
-unsafe fn ww<T: Z80_io>(z: *mut Z80<T>, mut addr: uint16_t, mut val: uint16_t) {
-    (*z).io.write_byte(addr, (val as i32 & 0xff as i32) as uint8_t);
-    (*z).io.write_byte(
+unsafe fn ww(mut addr: uint16_t, mut val: uint16_t, mut io: &mut impl Z80_io) {
+    io.write_byte(addr, (val as i32 & 0xff as i32) as uint8_t);
+    io.write_byte(
         (addr as i32 + 1 as i32) as uint16_t,
         (val as i32 >> 8 as i32) as uint8_t,
     );
 }
 #[inline]
-unsafe fn pushw<T: Z80_io>(z: *mut Z80<T>, mut val: uint16_t) {
+unsafe fn pushw(z: *mut Z80, mut val: uint16_t, mut io: &mut impl Z80_io) {
     (*z).sp = ((*z).sp as i32 - 2 as i32) as uint16_t;
-    ww(z, (*z).sp, val);
+    ww((*z).sp, val, io);
 }
 #[inline]
-unsafe fn popw<T: Z80_io>(z: *mut Z80<T>) -> uint16_t {
+unsafe fn popw(z: *mut Z80, io: &mut impl Z80_io) -> uint16_t {
     (*z).sp = ((*z).sp as i32 + 2 as i32) as uint16_t;
-    return rw(z, ((*z).sp as i32 - 2 as i32) as uint16_t);
+    return rw(((*z).sp as i32 - 2 as i32) as uint16_t, io);
 }
 #[inline]
-unsafe fn nextb<T: Z80_io>(z: *mut Z80<T>) -> uint8_t {
+unsafe fn nextb(z: *mut Z80, io: &mut impl Z80_io) -> uint8_t {
     let fresh0 = (*z).pc;
     (*z).pc = ((*z).pc).wrapping_add(1);
-    return rb(z, fresh0);
+    return rb(fresh0, io);
 }
 #[inline]
-unsafe fn nextw<T: Z80_io>(z: *mut Z80<T>) -> uint16_t {
+unsafe fn nextw(z: *mut Z80, io: &mut impl Z80_io) -> uint16_t {
     (*z).pc = ((*z).pc as i32 + 2 as i32) as uint16_t;
-    return rw(z, ((*z).pc as i32 - 2 as i32) as uint16_t);
+    return rw(((*z).pc as i32 - 2 as i32) as uint16_t, io);
 }
 #[inline]
-unsafe fn inc_r<T: Z80_io>(z: *mut Z80<T>) {
-    (*z)
-        .r = ((*z).r as i32 & 0x80 as i32
-        | (*z).r as i32 + 1 as i32 & 0x7f as i32) as uint8_t;
+unsafe fn inc_r(z: *mut Z80) {
+    (*z).r = ((*z).r as i32 & 0x80 as i32 | (*z).r as i32 + 1 as i32 & 0x7f as i32) as uint8_t;
 }
 #[inline]
 unsafe fn parity(mut v: uint8_t) -> bool {
@@ -412,56 +410,56 @@ unsafe fn parity(mut v: uint8_t) -> bool {
     return 0x6996 as i32 >> v as i32 & 1 as i32 == 0;
 }
 #[inline]
-unsafe fn jump<T: Z80_io>(z: *mut Z80<T>, mut addr: uint16_t) {
+unsafe fn jump(z: *mut Z80, mut addr: uint16_t) {
     (*z).pc = addr;
     (*z).mem_ptr = addr;
 }
 #[inline]
-unsafe fn cond_jump<T: Z80_io>(z: *mut Z80<T>, mut condition: bool) {
-    let addr: uint16_t = nextw(z);
+unsafe fn cond_jump(z: *mut Z80, mut condition: bool, io: &mut impl Z80_io) {
+    let addr: uint16_t = nextw(z, io);
     if condition {
         jump(z, addr);
     }
     (*z).mem_ptr = addr;
 }
 #[inline]
-unsafe fn call<T: Z80_io>(z: *mut Z80<T>, mut addr: uint16_t) {
-    pushw(z, (*z).pc);
+unsafe fn call(z: *mut Z80, mut addr: uint16_t, io: &mut impl Z80_io) {
+    pushw(z, (*z).pc, io);
     (*z).pc = addr;
     (*z).mem_ptr = addr;
 }
 #[inline]
-unsafe fn cond_call<T: Z80_io>(z: *mut Z80<T>, mut condition: bool) -> u32 {
-    let addr: uint16_t = nextw(z);
+unsafe fn cond_call(z: *mut Z80, mut condition: bool, io: &mut impl Z80_io) -> u32 {
+    let addr: uint16_t = nextw(z, io);
     let mut cyc: u32 = 0;
     if condition {
-        call(z, addr);
+        call(z, addr, io);
         cyc = 7;
     }
     (*z).mem_ptr = addr;
     return cyc;
 }
 #[inline]
-unsafe fn ret<T: Z80_io>(z: *mut Z80<T>) {
-    (*z).pc = popw(z);
+unsafe fn ret(z: *mut Z80, io: &mut impl Z80_io) {
+    (*z).pc = popw(z, io);
     (*z).mem_ptr = (*z).pc;
 }
 #[inline]
-unsafe fn cond_ret<T: Z80_io>(z: *mut Z80<T>, mut condition: bool) -> u32 {
+unsafe fn cond_ret(z: *mut Z80, mut condition: bool, io: &mut impl Z80_io) -> u32 {
     if condition {
-        ret(z);
+        ret(z, io);
         return 6;
     }
     return 0;
 }
 #[inline]
-unsafe fn jr<T: Z80_io>(z: *mut Z80<T>, mut displacement: int8_t) {
+unsafe fn jr(z: *mut Z80, mut displacement: int8_t) {
     (*z).pc = ((*z).pc as i32 + displacement as i32) as uint16_t;
     (*z).mem_ptr = (*z).pc;
 }
 #[inline]
-unsafe fn cond_jr<T: Z80_io>(z: *mut Z80<T>, mut condition: bool) -> u32 {
-    let b: int8_t = nextb(z) as int8_t;
+unsafe fn cond_jr(z: *mut Z80, mut condition: bool, io: &mut impl Z80_io) -> u32 {
+    let b: int8_t = nextb(z, io) as int8_t;
     if condition {
         jr(z, b);
         return 5;
@@ -469,81 +467,40 @@ unsafe fn cond_jr<T: Z80_io>(z: *mut Z80<T>, mut condition: bool) -> u32 {
     return 0;
 }
 #[inline]
-unsafe fn addb<T: Z80_io>(
-    z: *mut Z80<T>,
-    mut a: uint32_t,
-    mut b: uint32_t,
-    mut cy: bool,
-) -> uint8_t {
-    let mut result: int32_t = a.wrapping_add(b).wrapping_add(cy as u32)
-        as int32_t;
+unsafe fn addb(z: *mut Z80, mut a: uint32_t, mut b: uint32_t, mut cy: bool) -> uint8_t {
+    let mut result: int32_t = a.wrapping_add(b).wrapping_add(cy as u32) as int32_t;
     let mut carry: int32_t = (result as u32 ^ a ^ b) as int32_t;
     result &= 0xff as i32;
-    (*z)
-        .c2rust_unnamed
-        .c2rust_unnamed
-        .f = (f_szpxy[result as usize] as i32
-        & !((1 as i32) << pf as i32)) as uint8_t;
-    (*z)
-        .c2rust_unnamed
-        .c2rust_unnamed
-        .f = ((*z).c2rust_unnamed.c2rust_unnamed.f as i32
-        | carry & (1 as i32) << hf as i32) as uint8_t;
+    (*z).c2rust_unnamed.c2rust_unnamed.f =
+        (f_szpxy[result as usize] as i32 & !((1 as i32) << pf as i32)) as uint8_t;
+    (*z).c2rust_unnamed.c2rust_unnamed.f =
+        ((*z).c2rust_unnamed.c2rust_unnamed.f as i32 | carry & (1 as i32) << hf as i32) as uint8_t;
     carry >>= 6 as i32;
-    (*z)
-        .c2rust_unnamed
-        .c2rust_unnamed
-        .f = ((*z).c2rust_unnamed.c2rust_unnamed.f as i32
-        | carry + 2 as i32 & 4 as i32) as uint8_t;
-    (*z)
-        .c2rust_unnamed
-        .c2rust_unnamed
-        .f = ((*z).c2rust_unnamed.c2rust_unnamed.f as i32
-        | carry >> 2 as i32) as uint8_t;
+    (*z).c2rust_unnamed.c2rust_unnamed.f =
+        ((*z).c2rust_unnamed.c2rust_unnamed.f as i32 | carry + 2 as i32 & 4 as i32) as uint8_t;
+    (*z).c2rust_unnamed.c2rust_unnamed.f =
+        ((*z).c2rust_unnamed.c2rust_unnamed.f as i32 | carry >> 2 as i32) as uint8_t;
     return result as uint8_t;
 }
 #[inline]
-unsafe fn subb<T: Z80_io>(
-    z: *mut Z80<T>,
-    mut a: uint32_t,
-    mut b: uint32_t,
-    mut cy: bool,
-) -> uint8_t {
-    let mut result: int32_t = a.wrapping_sub(b).wrapping_sub(cy as u32)
-        as int32_t;
+unsafe fn subb(z: *mut Z80, mut a: uint32_t, mut b: uint32_t, mut cy: bool) -> uint8_t {
+    let mut result: int32_t = a.wrapping_sub(b).wrapping_sub(cy as u32) as int32_t;
     let mut carry: int32_t = (result as u32 ^ a ^ b) as int32_t;
     result &= 0xff as i32;
-    (*z)
-        .c2rust_unnamed
-        .c2rust_unnamed
-        .f = ((1 as i32) << nf as i32
-        | f_szpxy[result as usize] as i32
-            & !((1 as i32) << pf as i32)) as uint8_t;
-    (*z)
-        .c2rust_unnamed
-        .c2rust_unnamed
-        .f = ((*z).c2rust_unnamed.c2rust_unnamed.f as i32
-        | carry & (1 as i32) << hf as i32) as uint8_t;
+    (*z).c2rust_unnamed.c2rust_unnamed.f = ((1 as i32) << nf as i32
+        | f_szpxy[result as usize] as i32 & !((1 as i32) << pf as i32))
+        as uint8_t;
+    (*z).c2rust_unnamed.c2rust_unnamed.f =
+        ((*z).c2rust_unnamed.c2rust_unnamed.f as i32 | carry & (1 as i32) << hf as i32) as uint8_t;
     carry >>= 6 as i32;
-    (*z)
-        .c2rust_unnamed
-        .c2rust_unnamed
-        .f = ((*z).c2rust_unnamed.c2rust_unnamed.f as i32
-        | carry + 2 as i32 & 4 as i32) as uint8_t;
-    (*z)
-        .c2rust_unnamed
-        .c2rust_unnamed
-        .f = ((*z).c2rust_unnamed.c2rust_unnamed.f as i32
-        | carry >> 2 as i32 & 1 as i32) as uint8_t;
+    (*z).c2rust_unnamed.c2rust_unnamed.f =
+        ((*z).c2rust_unnamed.c2rust_unnamed.f as i32 | carry + 2 as i32 & 4 as i32) as uint8_t;
+    (*z).c2rust_unnamed.c2rust_unnamed.f =
+        ((*z).c2rust_unnamed.c2rust_unnamed.f as i32 | carry >> 2 as i32 & 1 as i32) as uint8_t;
     return result as uint8_t;
 }
 #[inline]
-unsafe fn addw<T: Z80_io>(
-    z: *mut Z80<T>,
-    mut a: uint16_t,
-    mut b: uint16_t,
-    mut cy: bool,
-) -> uint16_t {
+unsafe fn addw(z: *mut Z80, mut a: uint16_t, mut b: uint16_t, mut cy: bool) -> uint16_t {
     let mut lsb: uint8_t = addb(z, a as uint32_t, b as uint32_t, cy);
     let mut msb: uint8_t = addb(
         z,
@@ -551,19 +508,13 @@ unsafe fn addw<T: Z80_io>(
         (b as i32 >> 8 as i32) as uint32_t,
         flag_get(z, cf),
     );
-    let mut result: uint16_t = ((msb as i32) << 8 as i32
-        | lsb as i32) as uint16_t;
+    let mut result: uint16_t = ((msb as i32) << 8 as i32 | lsb as i32) as uint16_t;
     flag_set(z, zf, result as i32 == 0 as i32);
     (*z).mem_ptr = (a as i32 + 1 as i32) as uint16_t;
     return result;
 }
 #[inline]
-unsafe fn subw<T: Z80_io>(
-    z: *mut Z80<T>,
-    mut a: uint16_t,
-    mut b: uint16_t,
-    mut cy: bool,
-) -> uint16_t {
+unsafe fn subw(z: *mut Z80, mut a: uint16_t, mut b: uint16_t, mut cy: bool) -> uint16_t {
     let mut lsb: uint8_t = subb(z, a as uint32_t, b as uint32_t, cy);
     let mut msb: uint8_t = subb(
         z,
@@ -571,30 +522,24 @@ unsafe fn subw<T: Z80_io>(
         (b as i32 >> 8 as i32) as uint32_t,
         flag_get(z, cf),
     );
-    let mut result: uint16_t = ((msb as i32) << 8 as i32
-        | lsb as i32) as uint16_t;
+    let mut result: uint16_t = ((msb as i32) << 8 as i32 | lsb as i32) as uint16_t;
     flag_set(z, zf, result as i32 == 0 as i32);
     (*z).mem_ptr = (a as i32 + 1 as i32) as uint16_t;
     return result;
 }
 #[inline]
-unsafe fn addhl<T: Z80_io>(z: *mut Z80<T>, mut val: uint16_t) {
+unsafe fn addhl(z: *mut Z80, mut val: uint16_t) {
     let mut sfc: bool = flag_get(z, sf);
     let mut zfc: bool = flag_get(z, zf);
     let mut pfc: bool = flag_get(z, pf);
-    let mut result: uint16_t = addw(
-        z,
-        (*z).c2rust_unnamed_2.hl,
-        val,
-        0 as i32 != 0,
-    );
+    let mut result: uint16_t = addw(z, (*z).c2rust_unnamed_2.hl, val, 0 as i32 != 0);
     (*z).c2rust_unnamed_2.hl = result;
     flag_set(z, sf, sfc);
     flag_set(z, zf, zfc);
     flag_set(z, pf, pfc);
 }
 #[inline]
-unsafe fn addiz<T: Z80_io>(z: *mut Z80<T>, mut reg: *mut uint16_t, mut val: uint16_t) {
+unsafe fn addiz(z: *mut Z80, mut reg: *mut uint16_t, mut val: uint16_t) {
     let mut sfc: bool = flag_get(z, sf);
     let mut zfc: bool = flag_get(z, zf);
     let mut pfc: bool = flag_get(z, pf);
@@ -605,244 +550,181 @@ unsafe fn addiz<T: Z80_io>(z: *mut Z80<T>, mut reg: *mut uint16_t, mut val: uint
     flag_set(z, pf, pfc);
 }
 #[inline]
-unsafe fn adchl<T: Z80_io>(z: *mut Z80<T>, mut val: uint16_t) {
+unsafe fn adchl(z: *mut Z80, mut val: uint16_t) {
     let mut result: uint16_t = addw(z, (*z).c2rust_unnamed_2.hl, val, flag_get(z, cf));
     flag_set(z, sf, result as i32 >> 15 as i32 != 0);
     flag_set(z, zf, result as i32 == 0 as i32);
     (*z).c2rust_unnamed_2.hl = result;
 }
 #[inline]
-unsafe fn sbchl<T: Z80_io>(z: *mut Z80<T>, mut val: uint16_t) {
+unsafe fn sbchl(z: *mut Z80, mut val: uint16_t) {
     let result: uint16_t = subw(z, (*z).c2rust_unnamed_2.hl, val, flag_get(z, cf));
     flag_set(z, sf, result as i32 >> 15 as i32 != 0);
     flag_set(z, zf, result as i32 == 0 as i32);
     (*z).c2rust_unnamed_2.hl = result;
 }
 #[inline]
-unsafe fn inc<T: Z80_io>(z: *mut Z80<T>, mut a: uint8_t) -> uint8_t {
+unsafe fn inc(z: *mut Z80, mut a: uint8_t) -> uint8_t {
     let mut cfc: bool = flag_get(z, cf);
-    let mut result: uint8_t = addb(
-        z,
-        a as uint32_t,
-        1 as i32 as uint32_t,
-        0 as i32 != 0,
-    );
+    let mut result: uint8_t = addb(z, a as uint32_t, 1 as i32 as uint32_t, 0 as i32 != 0);
     flag_set(z, cf, cfc);
     return result;
 }
 #[inline]
-unsafe fn dec<T: Z80_io>(z: *mut Z80<T>, mut a: uint8_t) -> uint8_t {
+unsafe fn dec(z: *mut Z80, mut a: uint8_t) -> uint8_t {
     let mut cfc: bool = flag_get(z, cf);
-    let mut result: uint8_t = subb(
-        z,
-        a as uint32_t,
-        1 as i32 as uint32_t,
-        0 as i32 != 0,
-    );
+    let mut result: uint8_t = subb(z, a as uint32_t, 1 as i32 as uint32_t, 0 as i32 != 0);
     flag_set(z, cf, cfc);
     return result;
 }
 #[inline]
-unsafe fn land<T: Z80_io>(z: *mut Z80<T>, mut val: uint8_t) {
-    let result: uint8_t = ((*z).c2rust_unnamed.c2rust_unnamed.a as i32
-        & val as i32) as uint8_t;
-    (*z)
-        .c2rust_unnamed
-        .c2rust_unnamed
-        .f = (f_szpxy[result as usize] as i32
+unsafe fn land(z: *mut Z80, mut val: uint8_t) {
+    let result: uint8_t = ((*z).c2rust_unnamed.c2rust_unnamed.a as i32 & val as i32) as uint8_t;
+    (*z).c2rust_unnamed.c2rust_unnamed.f = (f_szpxy[result as usize] as i32
         | flag_val(hf, 1 as i32 != 0) as i32
         | flag_val(nf, 0 as i32 != 0) as i32
         | flag_val(cf, 0 as i32 != 0) as i32) as uint8_t;
     (*z).c2rust_unnamed.c2rust_unnamed.a = result;
 }
 #[inline]
-unsafe fn lxor<T: Z80_io>(z: *mut Z80<T>, val: uint8_t) {
-    let result: uint8_t = ((*z).c2rust_unnamed.c2rust_unnamed.a as i32
-        ^ val as i32) as uint8_t;
-    (*z)
-        .c2rust_unnamed
-        .c2rust_unnamed
-        .f = (f_szpxy[result as usize] as i32
+unsafe fn lxor(z: *mut Z80, val: uint8_t) {
+    let result: uint8_t = ((*z).c2rust_unnamed.c2rust_unnamed.a as i32 ^ val as i32) as uint8_t;
+    (*z).c2rust_unnamed.c2rust_unnamed.f = (f_szpxy[result as usize] as i32
         | flag_val(hf, 0 as i32 != 0) as i32
         | flag_val(nf, 0 as i32 != 0) as i32
         | flag_val(cf, 0 as i32 != 0) as i32) as uint8_t;
     (*z).c2rust_unnamed.c2rust_unnamed.a = result;
 }
 #[inline]
-unsafe fn lor<T: Z80_io>(z: *mut Z80<T>, val: uint8_t) {
-    let result: uint8_t = ((*z).c2rust_unnamed.c2rust_unnamed.a as i32
-        | val as i32) as uint8_t;
-    (*z)
-        .c2rust_unnamed
-        .c2rust_unnamed
-        .f = (f_szpxy[result as usize] as i32
+unsafe fn lor(z: *mut Z80, val: uint8_t) {
+    let result: uint8_t = ((*z).c2rust_unnamed.c2rust_unnamed.a as i32 | val as i32) as uint8_t;
+    (*z).c2rust_unnamed.c2rust_unnamed.f = (f_szpxy[result as usize] as i32
         | flag_val(hf, 0 as i32 != 0) as i32
         | flag_val(nf, 0 as i32 != 0) as i32
         | flag_val(cf, 0 as i32 != 0) as i32) as uint8_t;
     (*z).c2rust_unnamed.c2rust_unnamed.a = result;
 }
 #[inline]
-unsafe fn cp<T: Z80_io>(z: *mut Z80<T>, val: uint32_t) {
-    let mut result: int32_t = ((*z).c2rust_unnamed.c2rust_unnamed.a as u32)
-        .wrapping_sub(val) as int32_t;
-    let mut carry: int32_t = ((result
-        ^ (*z).c2rust_unnamed.c2rust_unnamed.a as i32) as u32 ^ val)
-        as int32_t;
-    (*z)
-        .c2rust_unnamed
-        .c2rust_unnamed
-        .f = (((1 as i32) << nf as i32) as u32
-        | val
-            & ((1 as i32) << xf as i32
-                | (1 as i32) << yf as i32) as u32
+unsafe fn cp(z: *mut Z80, val: uint32_t) {
+    let mut result: int32_t =
+        ((*z).c2rust_unnamed.c2rust_unnamed.a as u32).wrapping_sub(val) as int32_t;
+    let mut carry: int32_t =
+        ((result ^ (*z).c2rust_unnamed.c2rust_unnamed.a as i32) as u32 ^ val) as int32_t;
+    (*z).c2rust_unnamed.c2rust_unnamed.f = (((1 as i32) << nf as i32) as u32
+        | val & ((1 as i32) << xf as i32 | (1 as i32) << yf as i32) as u32
         | (result & (1 as i32) << sf as i32) as u32
-        | (((result & 0xff as i32 == 0) as i32) << zf as i32)
-            as u32) as uint8_t;
-    (*z)
-        .c2rust_unnamed
-        .c2rust_unnamed
-        .f = ((*z).c2rust_unnamed.c2rust_unnamed.f as i32
-        | carry & (1 as i32) << hf as i32) as uint8_t;
+        | (((result & 0xff as i32 == 0) as i32) << zf as i32) as u32)
+        as uint8_t;
+    (*z).c2rust_unnamed.c2rust_unnamed.f =
+        ((*z).c2rust_unnamed.c2rust_unnamed.f as i32 | carry & (1 as i32) << hf as i32) as uint8_t;
     carry >>= 6 as i32;
-    (*z)
-        .c2rust_unnamed
-        .c2rust_unnamed
-        .f = ((*z).c2rust_unnamed.c2rust_unnamed.f as i32
-        | carry + 2 as i32 & 4 as i32) as uint8_t;
-    (*z)
-        .c2rust_unnamed
-        .c2rust_unnamed
-        .f = ((*z).c2rust_unnamed.c2rust_unnamed.f as i32
-        | carry >> 2 as i32 & 1 as i32) as uint8_t;
+    (*z).c2rust_unnamed.c2rust_unnamed.f =
+        ((*z).c2rust_unnamed.c2rust_unnamed.f as i32 | carry + 2 as i32 & 4 as i32) as uint8_t;
+    (*z).c2rust_unnamed.c2rust_unnamed.f =
+        ((*z).c2rust_unnamed.c2rust_unnamed.f as i32 | carry >> 2 as i32 & 1 as i32) as uint8_t;
 }
 #[inline]
-unsafe fn cb_rlc<T: Z80_io>(z: *mut Z80<T>, mut val: uint8_t) -> uint8_t {
+unsafe fn cb_rlc(z: *mut Z80, mut val: uint8_t) -> uint8_t {
     let old: bool = val as i32 >> 7 as i32 != 0;
     val = ((val as i32) << 1 as i32 | old as i32) as uint8_t;
-    (*z)
-        .c2rust_unnamed
-        .c2rust_unnamed
-        .f = (f_szpxy[val as usize] as i32
+    (*z).c2rust_unnamed.c2rust_unnamed.f = (f_szpxy[val as usize] as i32
         | flag_val(nf, 0 as i32 != 0) as i32
         | flag_val(hf, 0 as i32 != 0) as i32
         | flag_val(cf, old) as i32) as uint8_t;
     return val;
 }
 #[inline]
-unsafe fn cb_rrc<T: Z80_io>(z: *mut Z80<T>, mut val: uint8_t) -> uint8_t {
+unsafe fn cb_rrc(z: *mut Z80, mut val: uint8_t) -> uint8_t {
     let old: bool = val as i32 & 1 as i32 != 0;
-    val = (val as i32 >> 1 as i32
-        | (old as i32) << 7 as i32) as uint8_t;
-    (*z)
-        .c2rust_unnamed
-        .c2rust_unnamed
-        .f = (f_szpxy[val as usize] as i32
+    val = (val as i32 >> 1 as i32 | (old as i32) << 7 as i32) as uint8_t;
+    (*z).c2rust_unnamed.c2rust_unnamed.f = (f_szpxy[val as usize] as i32
         | flag_val(nf, 0 as i32 != 0) as i32
         | flag_val(hf, 0 as i32 != 0) as i32
         | flag_val(cf, old) as i32) as uint8_t;
     return val;
 }
 #[inline]
-unsafe fn cb_rl<T: Z80_io>(z: *mut Z80<T>, mut val: uint8_t) -> uint8_t {
+unsafe fn cb_rl(z: *mut Z80, mut val: uint8_t) -> uint8_t {
     let cfc: bool = flag_get(z, cf);
     let cfn: bool = val as i32 >> 7 as i32 != 0;
     val = ((val as i32) << 1 as i32 | cfc as i32) as uint8_t;
-    (*z)
-        .c2rust_unnamed
-        .c2rust_unnamed
-        .f = (f_szpxy[val as usize] as i32 | flag_val(cf, cfn) as i32
+    (*z).c2rust_unnamed.c2rust_unnamed.f = (f_szpxy[val as usize] as i32
+        | flag_val(cf, cfn) as i32
         | flag_val(nf, 0 as i32 != 0) as i32
         | flag_val(hf, 0 as i32 != 0) as i32) as uint8_t;
     return val;
 }
 #[inline]
-unsafe fn cb_rr<T: Z80_io>(z: *mut Z80<T>, mut val: uint8_t) -> uint8_t {
+unsafe fn cb_rr(z: *mut Z80, mut val: uint8_t) -> uint8_t {
     let c: bool = flag_get(z, cf);
     let cfn: bool = val as i32 & 1 as i32 != 0;
-    val = (val as i32 >> 1 as i32
-        | (c as i32) << 7 as i32) as uint8_t;
-    (*z)
-        .c2rust_unnamed
-        .c2rust_unnamed
-        .f = (f_szpxy[val as usize] as i32 | flag_val(cf, cfn) as i32
+    val = (val as i32 >> 1 as i32 | (c as i32) << 7 as i32) as uint8_t;
+    (*z).c2rust_unnamed.c2rust_unnamed.f = (f_szpxy[val as usize] as i32
+        | flag_val(cf, cfn) as i32
         | flag_val(nf, 0 as i32 != 0) as i32
         | flag_val(hf, 0 as i32 != 0) as i32) as uint8_t;
     return val;
 }
 #[inline]
-unsafe fn cb_sla<T: Z80_io>(z: *mut Z80<T>, mut val: uint8_t) -> uint8_t {
+unsafe fn cb_sla(z: *mut Z80, mut val: uint8_t) -> uint8_t {
     let cfn: bool = val as i32 >> 7 as i32 != 0;
     val = ((val as i32) << 1 as i32) as uint8_t;
-    (*z)
-        .c2rust_unnamed
-        .c2rust_unnamed
-        .f = (f_szpxy[val as usize] as i32 | flag_val(cf, cfn) as i32
+    (*z).c2rust_unnamed.c2rust_unnamed.f = (f_szpxy[val as usize] as i32
+        | flag_val(cf, cfn) as i32
         | flag_val(nf, 0 as i32 != 0) as i32
         | flag_val(hf, 0 as i32 != 0) as i32) as uint8_t;
     return val;
 }
 #[inline]
-unsafe fn cb_sll<T: Z80_io>(z: *mut Z80<T>, mut val: uint8_t) -> uint8_t {
+unsafe fn cb_sll(z: *mut Z80, mut val: uint8_t) -> uint8_t {
     let cfn: bool = val as i32 >> 7 as i32 != 0;
     val = ((val as i32) << 1 as i32) as uint8_t;
     val = (val as i32 | 1 as i32) as uint8_t;
-    (*z)
-        .c2rust_unnamed
-        .c2rust_unnamed
-        .f = (f_szpxy[val as usize] as i32 | flag_val(cf, cfn) as i32
+    (*z).c2rust_unnamed.c2rust_unnamed.f = (f_szpxy[val as usize] as i32
+        | flag_val(cf, cfn) as i32
         | flag_val(nf, 0 as i32 != 0) as i32
         | flag_val(hf, 0 as i32 != 0) as i32) as uint8_t;
     return val;
 }
 #[inline]
-unsafe fn cb_sra<T: Z80_io>(z: *mut Z80<T>, mut val: uint8_t) -> uint8_t {
+unsafe fn cb_sra(z: *mut Z80, mut val: uint8_t) -> uint8_t {
     let cfn: bool = val as i32 & 1 as i32 != 0;
-    val = (val as i32 >> 1 as i32
-        | val as i32 & 0x80 as i32) as uint8_t;
-    (*z)
-        .c2rust_unnamed
-        .c2rust_unnamed
-        .f = (f_szpxy[val as usize] as i32 | flag_val(cf, cfn) as i32
+    val = (val as i32 >> 1 as i32 | val as i32 & 0x80 as i32) as uint8_t;
+    (*z).c2rust_unnamed.c2rust_unnamed.f = (f_szpxy[val as usize] as i32
+        | flag_val(cf, cfn) as i32
         | flag_val(nf, 0 as i32 != 0) as i32
         | flag_val(hf, 0 as i32 != 0) as i32) as uint8_t;
     return val;
 }
 #[inline]
-unsafe fn cb_srl<T: Z80_io>(z: *mut Z80<T>, mut val: uint8_t) -> uint8_t {
+unsafe fn cb_srl(z: *mut Z80, mut val: uint8_t) -> uint8_t {
     let cfn: bool = val as i32 & 1 as i32 != 0;
     val = (val as i32 >> 1 as i32) as uint8_t;
-    (*z)
-        .c2rust_unnamed
-        .c2rust_unnamed
-        .f = (f_szpxy[val as usize] as i32 | flag_val(cf, cfn) as i32
+    (*z).c2rust_unnamed.c2rust_unnamed.f = (f_szpxy[val as usize] as i32
+        | flag_val(cf, cfn) as i32
         | flag_val(nf, 0 as i32 != 0) as i32
         | flag_val(hf, 0 as i32 != 0) as i32) as uint8_t;
     return val;
 }
 #[inline]
-unsafe fn cb_bit<T: Z80_io>(z: *mut Z80<T>, mut val: uint8_t, mut n: uint8_t) -> uint8_t {
-    let result: uint8_t = (val as i32 & (1 as i32) << n as i32)
-        as uint8_t;
-    (*z)
-        .c2rust_unnamed
-        .c2rust_unnamed
-        .f = (f_szpxy[result as usize] as i32
+unsafe fn cb_bit(z: *mut Z80, mut val: uint8_t, mut n: uint8_t) -> uint8_t {
+    let result: uint8_t = (val as i32 & (1 as i32) << n as i32) as uint8_t;
+    (*z).c2rust_unnamed.c2rust_unnamed.f = (f_szpxy[result as usize] as i32
         | flag_val(cf, flag_get(z, cf)) as i32
         | flag_val(hf, 1 as i32 != 0) as i32
         | flag_val(nf, 0 as i32 != 0) as i32) as uint8_t;
     return result;
 }
 #[inline]
-unsafe fn ldi<T: Z80_io>(z: *mut Z80<T>) {
+unsafe fn ldi(z: *mut Z80, io: &mut impl Z80_io) {
     let de: uint16_t = (*z).c2rust_unnamed_1.de;
     let hl: uint16_t = (*z).c2rust_unnamed_2.hl;
-    let val: uint8_t = rb(z, hl);
-    wb(z, de, val);
+    let val: uint8_t = rb(hl, io);
+    wb(de, val, io);
     (*z).c2rust_unnamed_2.hl = ((*z).c2rust_unnamed_2.hl).wrapping_add(1);
     (*z).c2rust_unnamed_1.de = ((*z).c2rust_unnamed_1.de).wrapping_add(1);
     (*z).c2rust_unnamed_0.bc = ((*z).c2rust_unnamed_0.bc).wrapping_sub(1);
-    let result: uint8_t = (val as i32
-        + (*z).c2rust_unnamed.c2rust_unnamed.a as i32) as uint8_t;
+    let result: uint8_t = (val as i32 + (*z).c2rust_unnamed.c2rust_unnamed.a as i32) as uint8_t;
     flag_set(z, xf, result as i32 >> 3 as i32 & 1 as i32 != 0);
     flag_set(z, yf, result as i32 >> 1 as i32 & 1 as i32 != 0);
     flag_set(z, nf, 0 as i32 != 0);
@@ -850,22 +732,18 @@ unsafe fn ldi<T: Z80_io>(z: *mut Z80<T>) {
     flag_set(z, pf, (*z).c2rust_unnamed_0.bc as i32 > 0 as i32);
 }
 #[inline]
-unsafe fn ldd<T: Z80_io>(z: *mut Z80<T>) {
-    ldi(z);
-    (*z)
-        .c2rust_unnamed_2
-        .hl = ((*z).c2rust_unnamed_2.hl as i32 - 2 as i32) as uint16_t;
-    (*z)
-        .c2rust_unnamed_1
-        .de = ((*z).c2rust_unnamed_1.de as i32 - 2 as i32) as uint16_t;
+unsafe fn ldd(z: *mut Z80, io: &mut impl Z80_io) {
+    ldi(z, io);
+    (*z).c2rust_unnamed_2.hl = ((*z).c2rust_unnamed_2.hl as i32 - 2 as i32) as uint16_t;
+    (*z).c2rust_unnamed_1.de = ((*z).c2rust_unnamed_1.de as i32 - 2 as i32) as uint16_t;
 }
 #[inline]
-unsafe fn cpi<T: Z80_io>(z: *mut Z80<T>) {
+unsafe fn cpi(z: *mut Z80, io: &mut impl Z80_io) {
     let mut cfc: bool = flag_get(z, cf);
     let result: uint8_t = subb(
         z,
         (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
-        rb(z, (*z).c2rust_unnamed_2.hl) as uint32_t,
+        rb((*z).c2rust_unnamed_2.hl, io) as uint32_t,
         0 as i32 != 0,
     );
     (*z).c2rust_unnamed_2.hl = ((*z).c2rust_unnamed_2.hl).wrapping_add(1);
@@ -874,160 +752,109 @@ unsafe fn cpi<T: Z80_io>(z: *mut Z80<T>) {
     flag_set(
         z,
         xf,
-        result as i32 - hfc as i32 >> 3 as i32 & 1 as i32
-            != 0,
+        result as i32 - hfc as i32 >> 3 as i32 & 1 as i32 != 0,
     );
     flag_set(
         z,
         yf,
-        result as i32 - hfc as i32 >> 1 as i32 & 1 as i32
-            != 0,
+        result as i32 - hfc as i32 >> 1 as i32 & 1 as i32 != 0,
     );
     flag_set(z, pf, (*z).c2rust_unnamed_0.bc as i32 != 0 as i32);
     flag_set(z, cf, cfc);
     (*z).mem_ptr = ((*z).mem_ptr as i32 + 1 as i32) as uint16_t;
 }
 #[inline]
-unsafe fn cpd<T: Z80_io>(z: *mut Z80<T>) {
-    cpi(z);
-    (*z)
-        .c2rust_unnamed_2
-        .hl = ((*z).c2rust_unnamed_2.hl as i32 - 2 as i32) as uint16_t;
+unsafe fn cpd(z: *mut Z80, io: &mut impl Z80_io) {
+    cpi(z, io);
+    (*z).c2rust_unnamed_2.hl = ((*z).c2rust_unnamed_2.hl as i32 - 2 as i32) as uint16_t;
     (*z).mem_ptr = ((*z).mem_ptr as i32 - 2 as i32) as uint16_t;
 }
-unsafe fn in_r_c<T: Z80_io>(z: *mut Z80<T>, mut r: *mut uint8_t) {
-    *r = (*z).internal_port_in((*z).c2rust_unnamed_0.bc);
+unsafe fn in_r_c(z: *mut Z80, mut r: *mut uint8_t, io: &mut impl Z80_io) {
+    *r = (*z).internal_port_in((*z).c2rust_unnamed_0.bc, io);
     flag_set(z, zf, *r as i32 == 0 as i32);
     flag_set(z, sf, *r as i32 >> 7 as i32 != 0);
     flag_set(z, pf, parity(*r));
     flag_set(z, nf, 0 as i32 != 0);
     flag_set(z, hf, 0 as i32 != 0);
 }
-unsafe fn ini<T: Z80_io>(z: *mut Z80<T>) {
-    let mut tmp: u32 = (*z).internal_port_in((*z).c2rust_unnamed_0.bc)
-        as u32;
-    let mut tmp2: u32 = tmp
-        .wrapping_add(
-            ((*z).c2rust_unnamed_0.c2rust_unnamed.c as i32 + 1 as i32
-                & 0xff as i32) as u32,
-        );
-    (*z)
-        .mem_ptr = ((*z).c2rust_unnamed_0.bc as i32 + 1 as i32)
-        as uint16_t;
-    wb(z, (*z).c2rust_unnamed_2.hl, tmp as uint8_t);
+unsafe fn ini(z: *mut Z80, io: &mut impl Z80_io) {
+    let mut tmp: u32 = (*z).internal_port_in((*z).c2rust_unnamed_0.bc, io) as u32;
+    let mut tmp2: u32 = tmp.wrapping_add(
+        ((*z).c2rust_unnamed_0.c2rust_unnamed.c as i32 + 1 as i32 & 0xff as i32) as u32,
+    );
+    (*z).mem_ptr = ((*z).c2rust_unnamed_0.bc as i32 + 1 as i32) as uint16_t;
+    wb((*z).c2rust_unnamed_2.hl, tmp as uint8_t, io);
     (*z).c2rust_unnamed_2.hl = ((*z).c2rust_unnamed_2.hl).wrapping_add(1);
-    (*z)
-        .c2rust_unnamed_0
-        .c2rust_unnamed
-        .b = ((*z).c2rust_unnamed_0.c2rust_unnamed.b).wrapping_sub(1);
-    (*z)
-        .c2rust_unnamed
-        .c2rust_unnamed
-        .f = (f_szpxy[(*z).c2rust_unnamed_0.c2rust_unnamed.b as usize] as i32
+    (*z).c2rust_unnamed_0.c2rust_unnamed.b =
+        ((*z).c2rust_unnamed_0.c2rust_unnamed.b).wrapping_sub(1);
+    (*z).c2rust_unnamed.c2rust_unnamed.f = (f_szpxy[(*z).c2rust_unnamed_0.c2rust_unnamed.b as usize]
+        as i32
         & !((1 as i32) << pf as i32)
-        | flag_val(nf, tmp >> 7 as i32 & 1 != 0)
-            as i32
+        | flag_val(nf, tmp >> 7 as i32 & 1 != 0) as i32
         | flag_val(
             pf,
-            parity(
-                (tmp2 & 7
-                    ^ (*z).c2rust_unnamed_0.c2rust_unnamed.b as u32) as uint8_t,
-            ),
+            parity((tmp2 & 7 ^ (*z).c2rust_unnamed_0.c2rust_unnamed.b as u32) as uint8_t),
         ) as i32
         | flag_val(hf, tmp2 > 255) as i32
-        | flag_val(cf, tmp2 > 255) as i32)
-        as uint8_t;
+        | flag_val(cf, tmp2 > 255) as i32) as uint8_t;
 }
-unsafe fn ind<T: Z80_io>(z: *mut Z80<T>) {
-    let mut tmp: u32 = (*z).internal_port_in((*z).c2rust_unnamed_0.bc)
-        as u32;
-    let mut tmp2: u32 = tmp
-        .wrapping_add(
-            ((*z).c2rust_unnamed_0.c2rust_unnamed.c as i32 - 1 as i32
-                & 0xff as i32) as u32,
-        );
-    (*z)
-        .mem_ptr = ((*z).c2rust_unnamed_0.bc as i32 - 1 as i32)
-        as uint16_t;
-    wb(z, (*z).c2rust_unnamed_2.hl, tmp as uint8_t);
+unsafe fn ind(z: *mut Z80, io: &mut impl Z80_io) {
+    let mut tmp: u32 = (*z).internal_port_in((*z).c2rust_unnamed_0.bc, io) as u32;
+    let mut tmp2: u32 = tmp.wrapping_add(
+        ((*z).c2rust_unnamed_0.c2rust_unnamed.c as i32 - 1 as i32 & 0xff as i32) as u32,
+    );
+    (*z).mem_ptr = ((*z).c2rust_unnamed_0.bc as i32 - 1 as i32) as uint16_t;
+    wb((*z).c2rust_unnamed_2.hl, tmp as uint8_t, io);
     (*z).c2rust_unnamed_2.hl = ((*z).c2rust_unnamed_2.hl).wrapping_sub(1);
-    (*z)
-        .c2rust_unnamed_0
-        .c2rust_unnamed
-        .b = ((*z).c2rust_unnamed_0.c2rust_unnamed.b).wrapping_sub(1);
-    (*z)
-        .c2rust_unnamed
-        .c2rust_unnamed
-        .f = (f_szpxy[(*z).c2rust_unnamed_0.c2rust_unnamed.b as usize] as i32
+    (*z).c2rust_unnamed_0.c2rust_unnamed.b =
+        ((*z).c2rust_unnamed_0.c2rust_unnamed.b).wrapping_sub(1);
+    (*z).c2rust_unnamed.c2rust_unnamed.f = (f_szpxy[(*z).c2rust_unnamed_0.c2rust_unnamed.b as usize]
+        as i32
         & !((1 as i32) << pf as i32)
-        | flag_val(nf, tmp >> 7 as i32 & 1 != 0)
-            as i32
+        | flag_val(nf, tmp >> 7 as i32 & 1 != 0) as i32
         | flag_val(
             pf,
-            parity(
-                (tmp2 & 7
-                    ^ (*z).c2rust_unnamed_0.c2rust_unnamed.b as u32) as uint8_t,
-            ),
+            parity((tmp2 & 7 ^ (*z).c2rust_unnamed_0.c2rust_unnamed.b as u32) as uint8_t),
         ) as i32
         | flag_val(hf, tmp2 > 255) as i32
-        | flag_val(cf, tmp2 > 255) as i32)
-        as uint8_t;
+        | flag_val(cf, tmp2 > 255) as i32) as uint8_t;
 }
-unsafe fn outi<T: Z80_io>(z: *mut Z80<T>) {
-    let mut tmp: u32 = rb(z, (*z).c2rust_unnamed_2.hl) as u32;
+unsafe fn outi(z: *mut Z80, io: &mut impl Z80_io) {
+    let mut tmp: u32 = rb((*z).c2rust_unnamed_2.hl, io) as u32;
     let mut tmp2: u32 = 0;
-    (*z).internal_port_out((*z).c2rust_unnamed_0.bc, tmp as uint8_t);
+    (*z).internal_port_out((*z).c2rust_unnamed_0.bc, tmp as uint8_t, io);
     (*z).c2rust_unnamed_2.hl = ((*z).c2rust_unnamed_2.hl).wrapping_add(1);
-    (*z)
-        .c2rust_unnamed_0
-        .c2rust_unnamed
-        .b = ((*z).c2rust_unnamed_0.c2rust_unnamed.b as i32 - 1 as i32)
-        as uint8_t;
-    (*z)
-        .c2rust_unnamed
-        .c2rust_unnamed
-        .f = f_szpxy[(*z).c2rust_unnamed_0.c2rust_unnamed.b as usize];
+    (*z).c2rust_unnamed_0.c2rust_unnamed.b =
+        ((*z).c2rust_unnamed_0.c2rust_unnamed.b as i32 - 1 as i32) as uint8_t;
+    (*z).c2rust_unnamed.c2rust_unnamed.f = f_szpxy[(*z).c2rust_unnamed_0.c2rust_unnamed.b as usize];
     flag_set(z, nf, tmp >> 7 as i32 & 1 != 0);
     tmp2 = tmp.wrapping_add((*z).c2rust_unnamed_2.c2rust_unnamed.l as u32);
     flag_set(
         z,
         pf,
-        parity(
-            (tmp2 & 7
-                ^ (*z).c2rust_unnamed_0.c2rust_unnamed.b as u32) as uint8_t,
-        ),
+        parity((tmp2 & 7 ^ (*z).c2rust_unnamed_0.c2rust_unnamed.b as u32) as uint8_t),
     );
     flag_set(z, hf, tmp2 > 255);
     flag_set(z, cf, tmp2 > 255);
-    (*z)
-        .mem_ptr = ((*z).c2rust_unnamed_0.bc as i32 + 1 as i32)
-        as uint16_t;
+    (*z).mem_ptr = ((*z).c2rust_unnamed_0.bc as i32 + 1 as i32) as uint16_t;
 }
-unsafe fn outd<T: Z80_io>(z: *mut Z80<T>) {
-    outi(z);
-    (*z)
-        .c2rust_unnamed_2
-        .hl = ((*z).c2rust_unnamed_2.hl as i32 - 2 as i32) as uint16_t;
-    (*z)
-        .mem_ptr = ((*z).c2rust_unnamed_0.bc as i32 - 2 as i32)
-        as uint16_t;
+unsafe fn outd(z: *mut Z80, io: &mut impl Z80_io) {
+    outi(z, io);
+    (*z).c2rust_unnamed_2.hl = ((*z).c2rust_unnamed_2.hl as i32 - 2 as i32) as uint16_t;
+    (*z).mem_ptr = ((*z).c2rust_unnamed_0.bc as i32 - 2 as i32) as uint16_t;
 }
-unsafe fn outc<T: Z80_io>(z: *mut Z80<T>, mut data: uint8_t) {
-    (*z).internal_port_out((*z).c2rust_unnamed_0.bc, data);
-    (*z)
-        .mem_ptr = ((*z).c2rust_unnamed_0.bc as i32 + 1 as i32)
-        as uint16_t;
+unsafe fn outc(z: *mut Z80, mut data: uint8_t, io: &mut impl Z80_io) {
+    (*z).internal_port_out((*z).c2rust_unnamed_0.bc, data, io);
+    (*z).mem_ptr = ((*z).c2rust_unnamed_0.bc as i32 + 1 as i32) as uint16_t;
 }
-unsafe fn daa<T: Z80_io>(z: *mut Z80<T>) {
+unsafe fn daa(z: *mut Z80) {
     let mut correction: uint8_t = 0 as i32 as uint8_t;
-    if (*z).c2rust_unnamed.c2rust_unnamed.a as i32 & 0xf as i32
-        > 0x9 as i32 || flag_get(z, hf) as i32 != 0
+    if (*z).c2rust_unnamed.c2rust_unnamed.a as i32 & 0xf as i32 > 0x9 as i32
+        || flag_get(z, hf) as i32 != 0
     {
         correction = (correction as i32 + 0x6 as i32) as uint8_t;
     }
-    if (*z).c2rust_unnamed.c2rust_unnamed.a as i32 > 0x99 as i32
-        || flag_get(z, cf) as i32 != 0
-    {
+    if (*z).c2rust_unnamed.c2rust_unnamed.a as i32 > 0x99 as i32 || flag_get(z, cf) as i32 != 0 {
         correction = (correction as i32 + 0x60 as i32) as uint8_t;
         flag_set(z, cf, 1 as i32 != 0);
     }
@@ -1037,56 +864,37 @@ unsafe fn daa<T: Z80_io>(z: *mut Z80<T>) {
             z,
             hf,
             flag_get(z, hf) as i32 != 0
-                && ((*z).c2rust_unnamed.c2rust_unnamed.a as i32
-                    & 0xf as i32) < 0x6 as i32,
+                && ((*z).c2rust_unnamed.c2rust_unnamed.a as i32 & 0xf as i32) < 0x6 as i32,
         );
-        (*z)
-            .c2rust_unnamed
-            .c2rust_unnamed
-            .a = ((*z).c2rust_unnamed.c2rust_unnamed.a as i32
-            - correction as i32) as uint8_t;
+        (*z).c2rust_unnamed.c2rust_unnamed.a =
+            ((*z).c2rust_unnamed.c2rust_unnamed.a as i32 - correction as i32) as uint8_t;
     } else {
         flag_set(
             z,
             hf,
-            (*z).c2rust_unnamed.c2rust_unnamed.a as i32 & 0xf as i32
-                > 0x9 as i32,
+            (*z).c2rust_unnamed.c2rust_unnamed.a as i32 & 0xf as i32 > 0x9 as i32,
         );
-        (*z)
-            .c2rust_unnamed
-            .c2rust_unnamed
-            .a = ((*z).c2rust_unnamed.c2rust_unnamed.a as i32
-            + correction as i32) as uint8_t;
+        (*z).c2rust_unnamed.c2rust_unnamed.a =
+            ((*z).c2rust_unnamed.c2rust_unnamed.a as i32 + correction as i32) as uint8_t;
     }
-    (*z)
-        .c2rust_unnamed
-        .c2rust_unnamed
-        .f = ((*z).c2rust_unnamed.c2rust_unnamed.f as i32
+    (*z).c2rust_unnamed.c2rust_unnamed.f = ((*z).c2rust_unnamed.c2rust_unnamed.f as i32
         & !((1 as i32) << sf as i32
             | (1 as i32) << zf as i32
             | (1 as i32) << pf as i32
             | (1 as i32) << xf as i32
             | (1 as i32) << yf as i32)) as uint8_t;
-    (*z)
-        .c2rust_unnamed
-        .c2rust_unnamed
-        .f = ((*z).c2rust_unnamed.c2rust_unnamed.f as i32
+    (*z).c2rust_unnamed.c2rust_unnamed.f = ((*z).c2rust_unnamed.c2rust_unnamed.f as i32
         | f_szpxy[(*z).c2rust_unnamed.c2rust_unnamed.a as usize] as i32)
         as uint8_t;
 }
 #[inline]
-unsafe fn displace<T: Z80_io>(
-    z: *mut Z80<T>,
-    mut base_addr: uint16_t,
-    mut displacement: int8_t,
-) -> uint16_t {
-    let addr: uint16_t = (base_addr as i32 + displacement as i32)
-        as uint16_t;
+unsafe fn displace(z: *mut Z80, mut base_addr: uint16_t, mut displacement: int8_t) -> uint16_t {
+    let addr: uint16_t = (base_addr as i32 + displacement as i32) as uint16_t;
     (*z).mem_ptr = addr;
     return addr;
 }
 #[inline]
-unsafe fn process_interrupts<T: Z80_io>(z: *mut Z80<T>) -> u32 {
+unsafe fn process_interrupts(z: *mut Z80, io: &mut impl Z80_io) -> u32 {
     let mut cyc: u32 = 0;
     if (*z).iff_delay as i32 > 0 as i32 {
         (*z).iff_delay = ((*z).iff_delay as i32 - 1 as i32) as uint8_t;
@@ -1097,20 +905,16 @@ unsafe fn process_interrupts<T: Z80_io>(z: *mut Z80<T>) -> u32 {
         return cyc;
     }
     if (*z).nmi_pending != 0 {
-        (*z)
-            .nmi_pending = ((*z).nmi_pending as i32
-            & !(PULSE as i32)) as uint8_t;
+        (*z).nmi_pending = ((*z).nmi_pending as i32 & !(PULSE as i32)) as uint8_t;
         (*z).halted = 0 as i32 != 0;
         (*z).iff1 = 0 as i32 != 0;
         inc_r(z);
         cyc = cyc.wrapping_add(11);
-        call(z, 0x66 as i32 as uint16_t);
+        call(z, 0x66 as i32 as uint16_t, io);
         return cyc;
     }
     if (*z).irq_pending as i32 != 0 && (*z).iff1 as i32 != 0 {
-        (*z)
-            .irq_pending = ((*z).irq_pending as i32
-            & !(PULSE as i32)) as uint8_t;
+        (*z).irq_pending = ((*z).irq_pending as i32 & !(PULSE as i32)) as uint8_t;
         (*z).halted = 0 as i32 != 0;
         (*z).iff1 = 0 as i32 != 0;
         (*z).iff2 = 0 as i32 != 0;
@@ -1118,21 +922,21 @@ unsafe fn process_interrupts<T: Z80_io>(z: *mut Z80<T>) -> u32 {
         match (*z).interrupt_mode as i32 {
             0 => {
                 cyc = cyc.wrapping_add(11);
-                cyc = cyc.wrapping_add(exec_opcode(z, (*z).irq_data));
+                cyc = cyc.wrapping_add(exec_opcode(z, (*z).irq_data, io));
             }
             1 => {
                 cyc = cyc.wrapping_add(13);
-                call(z, 0x38 as i32 as uint16_t);
+                call(z, 0x38 as i32 as uint16_t, io);
             }
             2 => {
                 cyc = cyc.wrapping_add(19);
                 call(
                     z,
                     rw(
-                        z,
-                        (((*z).i as i32) << 8 as i32
-                            | (*z).irq_data as i32) as uint16_t,
+                        (((*z).i as i32) << 8 as i32 | (*z).irq_data as i32) as uint16_t,
+                        io,
                     ),
+                    io,
                 );
             }
             _ => {}
@@ -1141,34 +945,31 @@ unsafe fn process_interrupts<T: Z80_io>(z: *mut Z80<T>) -> u32 {
     }
     return cyc;
 }
-unsafe fn step_s<T: Z80_io>(z: *mut Z80<T>) -> u32 {
+unsafe fn step_s(z: *mut Z80, io: &mut impl Z80_io) -> u32 {
     let mut cyc: u32 = 0;
     if (*z).halted {
-        cyc = cyc.wrapping_add(exec_opcode(z, 0 as i32 as uint8_t));
+        cyc = cyc.wrapping_add(exec_opcode(z, 0 as i32 as uint8_t, io));
     } else {
-        let opcode: uint8_t = nextb(z);
-        cyc = cyc.wrapping_add(exec_opcode(z, opcode));
+        let opcode: uint8_t = nextb(z, io);
+        cyc = cyc.wrapping_add(exec_opcode(z, opcode, io));
     }
-    cyc = cyc.wrapping_add(process_interrupts(z));
+    cyc = cyc.wrapping_add(process_interrupts(z, io));
     return cyc;
 }
-unsafe fn _set_pc<T: Z80_io>(z: *mut Z80<T>, mut pc: uint16_t) {
+unsafe fn _set_pc(z: *mut Z80, mut pc: uint16_t) {
     (*z).pc = pc;
 }
-unsafe fn _set_sp<T: Z80_io>(z: *mut Z80<T>, mut sp: uint16_t) {
+unsafe fn _set_sp(z: *mut Z80, mut sp: uint16_t) {
     (*z).sp = sp;
 }
-unsafe fn _step_n<T: Z80_io>(
-    z: *mut Z80<T>,
-    mut cycles: u32,
-) -> u32 {
+unsafe fn _step_n(z: *mut Z80, mut cycles: u32, io: &mut impl Z80_io) -> u32 {
     let mut cyc: u32 = 0;
     while cyc < cycles {
-        cyc = cyc.wrapping_add(step_s(z));
+        cyc = cyc.wrapping_add(step_s(z, io));
     }
     return cyc;
 }
-unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
+unsafe fn exec_opcode(z: *mut Z80, mut opcode: uint8_t, io: &mut impl Z80_io) -> u32 {
     let mut cyc: u32 = 0;
     inc_r(z);
     match opcode as i32 {
@@ -1178,502 +979,383 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         120 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = (*z).c2rust_unnamed_0.c2rust_unnamed.b;
+            (*z).c2rust_unnamed.c2rust_unnamed.a = (*z).c2rust_unnamed_0.c2rust_unnamed.b;
         }
         121 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = (*z).c2rust_unnamed_0.c2rust_unnamed.c;
+            (*z).c2rust_unnamed.c2rust_unnamed.a = (*z).c2rust_unnamed_0.c2rust_unnamed.c;
         }
         122 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = (*z).c2rust_unnamed_1.c2rust_unnamed.d;
+            (*z).c2rust_unnamed.c2rust_unnamed.a = (*z).c2rust_unnamed_1.c2rust_unnamed.d;
         }
         123 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = (*z).c2rust_unnamed_1.c2rust_unnamed.e;
+            (*z).c2rust_unnamed.c2rust_unnamed.a = (*z).c2rust_unnamed_1.c2rust_unnamed.e;
         }
         124 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = (*z).c2rust_unnamed_2.c2rust_unnamed.h;
+            (*z).c2rust_unnamed.c2rust_unnamed.a = (*z).c2rust_unnamed_2.c2rust_unnamed.h;
         }
         125 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = (*z).c2rust_unnamed_2.c2rust_unnamed.l;
+            (*z).c2rust_unnamed.c2rust_unnamed.a = (*z).c2rust_unnamed_2.c2rust_unnamed.l;
         }
         71 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_0
-                .c2rust_unnamed
-                .b = (*z).c2rust_unnamed.c2rust_unnamed.a;
+            (*z).c2rust_unnamed_0.c2rust_unnamed.b = (*z).c2rust_unnamed.c2rust_unnamed.a;
         }
         64 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_0
-                .c2rust_unnamed
-                .b = (*z).c2rust_unnamed_0.c2rust_unnamed.b;
+            (*z).c2rust_unnamed_0.c2rust_unnamed.b = (*z).c2rust_unnamed_0.c2rust_unnamed.b;
         }
         65 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_0
-                .c2rust_unnamed
-                .b = (*z).c2rust_unnamed_0.c2rust_unnamed.c;
+            (*z).c2rust_unnamed_0.c2rust_unnamed.b = (*z).c2rust_unnamed_0.c2rust_unnamed.c;
         }
         66 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_0
-                .c2rust_unnamed
-                .b = (*z).c2rust_unnamed_1.c2rust_unnamed.d;
+            (*z).c2rust_unnamed_0.c2rust_unnamed.b = (*z).c2rust_unnamed_1.c2rust_unnamed.d;
         }
         67 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_0
-                .c2rust_unnamed
-                .b = (*z).c2rust_unnamed_1.c2rust_unnamed.e;
+            (*z).c2rust_unnamed_0.c2rust_unnamed.b = (*z).c2rust_unnamed_1.c2rust_unnamed.e;
         }
         68 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_0
-                .c2rust_unnamed
-                .b = (*z).c2rust_unnamed_2.c2rust_unnamed.h;
+            (*z).c2rust_unnamed_0.c2rust_unnamed.b = (*z).c2rust_unnamed_2.c2rust_unnamed.h;
         }
         69 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_0
-                .c2rust_unnamed
-                .b = (*z).c2rust_unnamed_2.c2rust_unnamed.l;
+            (*z).c2rust_unnamed_0.c2rust_unnamed.b = (*z).c2rust_unnamed_2.c2rust_unnamed.l;
         }
         79 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_0
-                .c2rust_unnamed
-                .c = (*z).c2rust_unnamed.c2rust_unnamed.a;
+            (*z).c2rust_unnamed_0.c2rust_unnamed.c = (*z).c2rust_unnamed.c2rust_unnamed.a;
         }
         72 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_0
-                .c2rust_unnamed
-                .c = (*z).c2rust_unnamed_0.c2rust_unnamed.b;
+            (*z).c2rust_unnamed_0.c2rust_unnamed.c = (*z).c2rust_unnamed_0.c2rust_unnamed.b;
         }
         73 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_0
-                .c2rust_unnamed
-                .c = (*z).c2rust_unnamed_0.c2rust_unnamed.c;
+            (*z).c2rust_unnamed_0.c2rust_unnamed.c = (*z).c2rust_unnamed_0.c2rust_unnamed.c;
         }
         74 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_0
-                .c2rust_unnamed
-                .c = (*z).c2rust_unnamed_1.c2rust_unnamed.d;
+            (*z).c2rust_unnamed_0.c2rust_unnamed.c = (*z).c2rust_unnamed_1.c2rust_unnamed.d;
         }
         75 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_0
-                .c2rust_unnamed
-                .c = (*z).c2rust_unnamed_1.c2rust_unnamed.e;
+            (*z).c2rust_unnamed_0.c2rust_unnamed.c = (*z).c2rust_unnamed_1.c2rust_unnamed.e;
         }
         76 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_0
-                .c2rust_unnamed
-                .c = (*z).c2rust_unnamed_2.c2rust_unnamed.h;
+            (*z).c2rust_unnamed_0.c2rust_unnamed.c = (*z).c2rust_unnamed_2.c2rust_unnamed.h;
         }
         77 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_0
-                .c2rust_unnamed
-                .c = (*z).c2rust_unnamed_2.c2rust_unnamed.l;
+            (*z).c2rust_unnamed_0.c2rust_unnamed.c = (*z).c2rust_unnamed_2.c2rust_unnamed.l;
         }
         87 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_1
-                .c2rust_unnamed
-                .d = (*z).c2rust_unnamed.c2rust_unnamed.a;
+            (*z).c2rust_unnamed_1.c2rust_unnamed.d = (*z).c2rust_unnamed.c2rust_unnamed.a;
         }
         80 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_1
-                .c2rust_unnamed
-                .d = (*z).c2rust_unnamed_0.c2rust_unnamed.b;
+            (*z).c2rust_unnamed_1.c2rust_unnamed.d = (*z).c2rust_unnamed_0.c2rust_unnamed.b;
         }
         81 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_1
-                .c2rust_unnamed
-                .d = (*z).c2rust_unnamed_0.c2rust_unnamed.c;
+            (*z).c2rust_unnamed_1.c2rust_unnamed.d = (*z).c2rust_unnamed_0.c2rust_unnamed.c;
         }
         82 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_1
-                .c2rust_unnamed
-                .d = (*z).c2rust_unnamed_1.c2rust_unnamed.d;
+            (*z).c2rust_unnamed_1.c2rust_unnamed.d = (*z).c2rust_unnamed_1.c2rust_unnamed.d;
         }
         83 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_1
-                .c2rust_unnamed
-                .d = (*z).c2rust_unnamed_1.c2rust_unnamed.e;
+            (*z).c2rust_unnamed_1.c2rust_unnamed.d = (*z).c2rust_unnamed_1.c2rust_unnamed.e;
         }
         84 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_1
-                .c2rust_unnamed
-                .d = (*z).c2rust_unnamed_2.c2rust_unnamed.h;
+            (*z).c2rust_unnamed_1.c2rust_unnamed.d = (*z).c2rust_unnamed_2.c2rust_unnamed.h;
         }
         85 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_1
-                .c2rust_unnamed
-                .d = (*z).c2rust_unnamed_2.c2rust_unnamed.l;
+            (*z).c2rust_unnamed_1.c2rust_unnamed.d = (*z).c2rust_unnamed_2.c2rust_unnamed.l;
         }
         95 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_1
-                .c2rust_unnamed
-                .e = (*z).c2rust_unnamed.c2rust_unnamed.a;
+            (*z).c2rust_unnamed_1.c2rust_unnamed.e = (*z).c2rust_unnamed.c2rust_unnamed.a;
         }
         88 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_1
-                .c2rust_unnamed
-                .e = (*z).c2rust_unnamed_0.c2rust_unnamed.b;
+            (*z).c2rust_unnamed_1.c2rust_unnamed.e = (*z).c2rust_unnamed_0.c2rust_unnamed.b;
         }
         89 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_1
-                .c2rust_unnamed
-                .e = (*z).c2rust_unnamed_0.c2rust_unnamed.c;
+            (*z).c2rust_unnamed_1.c2rust_unnamed.e = (*z).c2rust_unnamed_0.c2rust_unnamed.c;
         }
         90 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_1
-                .c2rust_unnamed
-                .e = (*z).c2rust_unnamed_1.c2rust_unnamed.d;
+            (*z).c2rust_unnamed_1.c2rust_unnamed.e = (*z).c2rust_unnamed_1.c2rust_unnamed.d;
         }
         91 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_1
-                .c2rust_unnamed
-                .e = (*z).c2rust_unnamed_1.c2rust_unnamed.e;
+            (*z).c2rust_unnamed_1.c2rust_unnamed.e = (*z).c2rust_unnamed_1.c2rust_unnamed.e;
         }
         92 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_1
-                .c2rust_unnamed
-                .e = (*z).c2rust_unnamed_2.c2rust_unnamed.h;
+            (*z).c2rust_unnamed_1.c2rust_unnamed.e = (*z).c2rust_unnamed_2.c2rust_unnamed.h;
         }
         93 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_1
-                .c2rust_unnamed
-                .e = (*z).c2rust_unnamed_2.c2rust_unnamed.l;
+            (*z).c2rust_unnamed_1.c2rust_unnamed.e = (*z).c2rust_unnamed_2.c2rust_unnamed.l;
         }
         103 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_2
-                .c2rust_unnamed
-                .h = (*z).c2rust_unnamed.c2rust_unnamed.a;
+            (*z).c2rust_unnamed_2.c2rust_unnamed.h = (*z).c2rust_unnamed.c2rust_unnamed.a;
         }
         96 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_2
-                .c2rust_unnamed
-                .h = (*z).c2rust_unnamed_0.c2rust_unnamed.b;
+            (*z).c2rust_unnamed_2.c2rust_unnamed.h = (*z).c2rust_unnamed_0.c2rust_unnamed.b;
         }
         97 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_2
-                .c2rust_unnamed
-                .h = (*z).c2rust_unnamed_0.c2rust_unnamed.c;
+            (*z).c2rust_unnamed_2.c2rust_unnamed.h = (*z).c2rust_unnamed_0.c2rust_unnamed.c;
         }
         98 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_2
-                .c2rust_unnamed
-                .h = (*z).c2rust_unnamed_1.c2rust_unnamed.d;
+            (*z).c2rust_unnamed_2.c2rust_unnamed.h = (*z).c2rust_unnamed_1.c2rust_unnamed.d;
         }
         99 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_2
-                .c2rust_unnamed
-                .h = (*z).c2rust_unnamed_1.c2rust_unnamed.e;
+            (*z).c2rust_unnamed_2.c2rust_unnamed.h = (*z).c2rust_unnamed_1.c2rust_unnamed.e;
         }
         100 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_2
-                .c2rust_unnamed
-                .h = (*z).c2rust_unnamed_2.c2rust_unnamed.h;
+            (*z).c2rust_unnamed_2.c2rust_unnamed.h = (*z).c2rust_unnamed_2.c2rust_unnamed.h;
         }
         101 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_2
-                .c2rust_unnamed
-                .h = (*z).c2rust_unnamed_2.c2rust_unnamed.l;
+            (*z).c2rust_unnamed_2.c2rust_unnamed.h = (*z).c2rust_unnamed_2.c2rust_unnamed.l;
         }
         111 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_2
-                .c2rust_unnamed
-                .l = (*z).c2rust_unnamed.c2rust_unnamed.a;
+            (*z).c2rust_unnamed_2.c2rust_unnamed.l = (*z).c2rust_unnamed.c2rust_unnamed.a;
         }
         104 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_2
-                .c2rust_unnamed
-                .l = (*z).c2rust_unnamed_0.c2rust_unnamed.b;
+            (*z).c2rust_unnamed_2.c2rust_unnamed.l = (*z).c2rust_unnamed_0.c2rust_unnamed.b;
         }
         105 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_2
-                .c2rust_unnamed
-                .l = (*z).c2rust_unnamed_0.c2rust_unnamed.c;
+            (*z).c2rust_unnamed_2.c2rust_unnamed.l = (*z).c2rust_unnamed_0.c2rust_unnamed.c;
         }
         106 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_2
-                .c2rust_unnamed
-                .l = (*z).c2rust_unnamed_1.c2rust_unnamed.d;
+            (*z).c2rust_unnamed_2.c2rust_unnamed.l = (*z).c2rust_unnamed_1.c2rust_unnamed.d;
         }
         107 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_2
-                .c2rust_unnamed
-                .l = (*z).c2rust_unnamed_1.c2rust_unnamed.e;
+            (*z).c2rust_unnamed_2.c2rust_unnamed.l = (*z).c2rust_unnamed_1.c2rust_unnamed.e;
         }
         108 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_2
-                .c2rust_unnamed
-                .l = (*z).c2rust_unnamed_2.c2rust_unnamed.h;
+            (*z).c2rust_unnamed_2.c2rust_unnamed.l = (*z).c2rust_unnamed_2.c2rust_unnamed.h;
         }
         109 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_2
-                .c2rust_unnamed
-                .l = (*z).c2rust_unnamed_2.c2rust_unnamed.l;
+            (*z).c2rust_unnamed_2.c2rust_unnamed.l = (*z).c2rust_unnamed_2.c2rust_unnamed.l;
         }
         126 => {
             cyc = cyc.wrapping_add(7);
-            (*z).c2rust_unnamed.c2rust_unnamed.a = rb(z, (*z).c2rust_unnamed_2.hl);
+            (*z).c2rust_unnamed.c2rust_unnamed.a = rb((*z).c2rust_unnamed_2.hl, io);
         }
         70 => {
             cyc = cyc.wrapping_add(7);
-            (*z).c2rust_unnamed_0.c2rust_unnamed.b = rb(z, (*z).c2rust_unnamed_2.hl);
+            (*z).c2rust_unnamed_0.c2rust_unnamed.b = rb((*z).c2rust_unnamed_2.hl, io);
         }
         78 => {
             cyc = cyc.wrapping_add(7);
-            (*z).c2rust_unnamed_0.c2rust_unnamed.c = rb(z, (*z).c2rust_unnamed_2.hl);
+            (*z).c2rust_unnamed_0.c2rust_unnamed.c = rb((*z).c2rust_unnamed_2.hl, io);
         }
         86 => {
             cyc = cyc.wrapping_add(7);
-            (*z).c2rust_unnamed_1.c2rust_unnamed.d = rb(z, (*z).c2rust_unnamed_2.hl);
+            (*z).c2rust_unnamed_1.c2rust_unnamed.d = rb((*z).c2rust_unnamed_2.hl, io);
         }
         94 => {
             cyc = cyc.wrapping_add(7);
-            (*z).c2rust_unnamed_1.c2rust_unnamed.e = rb(z, (*z).c2rust_unnamed_2.hl);
+            (*z).c2rust_unnamed_1.c2rust_unnamed.e = rb((*z).c2rust_unnamed_2.hl, io);
         }
         102 => {
             cyc = cyc.wrapping_add(7);
-            (*z).c2rust_unnamed_2.c2rust_unnamed.h = rb(z, (*z).c2rust_unnamed_2.hl);
+            (*z).c2rust_unnamed_2.c2rust_unnamed.h = rb((*z).c2rust_unnamed_2.hl, io);
         }
         110 => {
             cyc = cyc.wrapping_add(7);
-            (*z).c2rust_unnamed_2.c2rust_unnamed.l = rb(z, (*z).c2rust_unnamed_2.hl);
+            (*z).c2rust_unnamed_2.c2rust_unnamed.l = rb((*z).c2rust_unnamed_2.hl, io);
         }
         119 => {
             cyc = cyc.wrapping_add(7);
-            wb(z, (*z).c2rust_unnamed_2.hl, (*z).c2rust_unnamed.c2rust_unnamed.a);
+            wb(
+                (*z).c2rust_unnamed_2.hl,
+                (*z).c2rust_unnamed.c2rust_unnamed.a,
+                io,
+            );
         }
         112 => {
             cyc = cyc.wrapping_add(7);
-            wb(z, (*z).c2rust_unnamed_2.hl, (*z).c2rust_unnamed_0.c2rust_unnamed.b);
+            wb(
+                (*z).c2rust_unnamed_2.hl,
+                (*z).c2rust_unnamed_0.c2rust_unnamed.b,
+                io,
+            );
         }
         113 => {
             cyc = cyc.wrapping_add(7);
-            wb(z, (*z).c2rust_unnamed_2.hl, (*z).c2rust_unnamed_0.c2rust_unnamed.c);
+            wb(
+                (*z).c2rust_unnamed_2.hl,
+                (*z).c2rust_unnamed_0.c2rust_unnamed.c,
+                io,
+            );
         }
         114 => {
             cyc = cyc.wrapping_add(7);
-            wb(z, (*z).c2rust_unnamed_2.hl, (*z).c2rust_unnamed_1.c2rust_unnamed.d);
+            wb(
+                (*z).c2rust_unnamed_2.hl,
+                (*z).c2rust_unnamed_1.c2rust_unnamed.d,
+                io,
+            );
         }
         115 => {
             cyc = cyc.wrapping_add(7);
-            wb(z, (*z).c2rust_unnamed_2.hl, (*z).c2rust_unnamed_1.c2rust_unnamed.e);
+            wb(
+                (*z).c2rust_unnamed_2.hl,
+                (*z).c2rust_unnamed_1.c2rust_unnamed.e,
+                io,
+            );
         }
         116 => {
             cyc = cyc.wrapping_add(7);
-            wb(z, (*z).c2rust_unnamed_2.hl, (*z).c2rust_unnamed_2.c2rust_unnamed.h);
+            wb(
+                (*z).c2rust_unnamed_2.hl,
+                (*z).c2rust_unnamed_2.c2rust_unnamed.h,
+                io,
+            );
         }
         117 => {
             cyc = cyc.wrapping_add(7);
-            wb(z, (*z).c2rust_unnamed_2.hl, (*z).c2rust_unnamed_2.c2rust_unnamed.l);
+            wb(
+                (*z).c2rust_unnamed_2.hl,
+                (*z).c2rust_unnamed_2.c2rust_unnamed.l,
+                io,
+            );
         }
         62 => {
             cyc = cyc.wrapping_add(7);
-            (*z).c2rust_unnamed.c2rust_unnamed.a = nextb(z);
+            (*z).c2rust_unnamed.c2rust_unnamed.a = nextb(z, io);
         }
         6 => {
             cyc = cyc.wrapping_add(7);
-            (*z).c2rust_unnamed_0.c2rust_unnamed.b = nextb(z);
+            (*z).c2rust_unnamed_0.c2rust_unnamed.b = nextb(z, io);
         }
         14 => {
             cyc = cyc.wrapping_add(7);
-            (*z).c2rust_unnamed_0.c2rust_unnamed.c = nextb(z);
+            (*z).c2rust_unnamed_0.c2rust_unnamed.c = nextb(z, io);
         }
         22 => {
             cyc = cyc.wrapping_add(7);
-            (*z).c2rust_unnamed_1.c2rust_unnamed.d = nextb(z);
+            (*z).c2rust_unnamed_1.c2rust_unnamed.d = nextb(z, io);
         }
         30 => {
             cyc = cyc.wrapping_add(7);
-            (*z).c2rust_unnamed_1.c2rust_unnamed.e = nextb(z);
+            (*z).c2rust_unnamed_1.c2rust_unnamed.e = nextb(z, io);
         }
         38 => {
             cyc = cyc.wrapping_add(7);
-            (*z).c2rust_unnamed_2.c2rust_unnamed.h = nextb(z);
+            (*z).c2rust_unnamed_2.c2rust_unnamed.h = nextb(z, io);
         }
         46 => {
             cyc = cyc.wrapping_add(7);
-            (*z).c2rust_unnamed_2.c2rust_unnamed.l = nextb(z);
+            (*z).c2rust_unnamed_2.c2rust_unnamed.l = nextb(z, io);
         }
         54 => {
             cyc = cyc.wrapping_add(10);
-            wb(z, (*z).c2rust_unnamed_2.hl, nextb(z));
+            wb((*z).c2rust_unnamed_2.hl, nextb(z, io), io);
         }
         10 => {
             cyc = cyc.wrapping_add(7);
-            (*z).c2rust_unnamed.c2rust_unnamed.a = rb(z, (*z).c2rust_unnamed_0.bc);
-            (*z)
-                .mem_ptr = ((*z).c2rust_unnamed_0.bc as i32 + 1 as i32)
-                as uint16_t;
+            (*z).c2rust_unnamed.c2rust_unnamed.a = rb((*z).c2rust_unnamed_0.bc, io);
+            (*z).mem_ptr = ((*z).c2rust_unnamed_0.bc as i32 + 1 as i32) as uint16_t;
         }
         26 => {
             cyc = cyc.wrapping_add(7);
-            (*z).c2rust_unnamed.c2rust_unnamed.a = rb(z, (*z).c2rust_unnamed_1.de);
-            (*z)
-                .mem_ptr = ((*z).c2rust_unnamed_1.de as i32 + 1 as i32)
-                as uint16_t;
+            (*z).c2rust_unnamed.c2rust_unnamed.a = rb((*z).c2rust_unnamed_1.de, io);
+            (*z).mem_ptr = ((*z).c2rust_unnamed_1.de as i32 + 1 as i32) as uint16_t;
         }
         58 => {
             cyc = cyc.wrapping_add(13);
-            let addr: uint16_t = nextw(z);
-            (*z).c2rust_unnamed.c2rust_unnamed.a = rb(z, addr);
+            let addr: uint16_t = nextw(z, io);
+            (*z).c2rust_unnamed.c2rust_unnamed.a = rb(addr, io);
             (*z).mem_ptr = (addr as i32 + 1 as i32) as uint16_t;
         }
         2 => {
             cyc = cyc.wrapping_add(7);
-            wb(z, (*z).c2rust_unnamed_0.bc, (*z).c2rust_unnamed.c2rust_unnamed.a);
-            (*z)
-                .mem_ptr = (((*z).c2rust_unnamed.c2rust_unnamed.a as i32)
-                << 8 as i32
-                | (*z).c2rust_unnamed_0.bc as i32 + 1 as i32
-                    & 0xff as i32) as uint16_t;
+            wb(
+                (*z).c2rust_unnamed_0.bc,
+                (*z).c2rust_unnamed.c2rust_unnamed.a,
+                io,
+            );
+            (*z).mem_ptr = (((*z).c2rust_unnamed.c2rust_unnamed.a as i32) << 8 as i32
+                | (*z).c2rust_unnamed_0.bc as i32 + 1 as i32 & 0xff as i32)
+                as uint16_t;
         }
         18 => {
             cyc = cyc.wrapping_add(7);
-            wb(z, (*z).c2rust_unnamed_1.de, (*z).c2rust_unnamed.c2rust_unnamed.a);
-            (*z)
-                .mem_ptr = (((*z).c2rust_unnamed.c2rust_unnamed.a as i32)
-                << 8 as i32
-                | (*z).c2rust_unnamed_1.de as i32 + 1 as i32
-                    & 0xff as i32) as uint16_t;
+            wb(
+                (*z).c2rust_unnamed_1.de,
+                (*z).c2rust_unnamed.c2rust_unnamed.a,
+                io,
+            );
+            (*z).mem_ptr = (((*z).c2rust_unnamed.c2rust_unnamed.a as i32) << 8 as i32
+                | (*z).c2rust_unnamed_1.de as i32 + 1 as i32 & 0xff as i32)
+                as uint16_t;
         }
         50 => {
             cyc = cyc.wrapping_add(13);
-            let addr_0: uint16_t = nextw(z);
-            wb(z, addr_0, (*z).c2rust_unnamed.c2rust_unnamed.a);
-            (*z)
-                .mem_ptr = (((*z).c2rust_unnamed.c2rust_unnamed.a as i32)
-                << 8 as i32
-                | addr_0 as i32 + 1 as i32 & 0xff as i32)
-                as uint16_t;
+            let addr_0: uint16_t = nextw(z, io);
+            wb(addr_0, (*z).c2rust_unnamed.c2rust_unnamed.a, io);
+            (*z).mem_ptr = (((*z).c2rust_unnamed.c2rust_unnamed.a as i32) << 8 as i32
+                | addr_0 as i32 + 1 as i32 & 0xff as i32) as uint16_t;
         }
         1 => {
             cyc = cyc.wrapping_add(10);
-            (*z).c2rust_unnamed_0.bc = nextw(z);
+            (*z).c2rust_unnamed_0.bc = nextw(z, io);
         }
         17 => {
             cyc = cyc.wrapping_add(10);
-            (*z).c2rust_unnamed_1.de = nextw(z);
+            (*z).c2rust_unnamed_1.de = nextw(z, io);
         }
         33 => {
             cyc = cyc.wrapping_add(10);
-            (*z).c2rust_unnamed_2.hl = nextw(z);
+            (*z).c2rust_unnamed_2.hl = nextw(z, io);
         }
         49 => {
             cyc = cyc.wrapping_add(10);
-            (*z).sp = nextw(z);
+            (*z).sp = nextw(z, io);
         }
         42 => {
             cyc = cyc.wrapping_add(16);
-            let addr_1: uint16_t = nextw(z);
-            (*z).c2rust_unnamed_2.hl = rw(z, addr_1);
+            let addr_1: uint16_t = nextw(z, io);
+            (*z).c2rust_unnamed_2.hl = rw(addr_1, io);
             (*z).mem_ptr = (addr_1 as i32 + 1 as i32) as uint16_t;
         }
         34 => {
             cyc = cyc.wrapping_add(16);
-            let addr_2: uint16_t = nextw(z);
-            ww(z, addr_2, (*z).c2rust_unnamed_2.hl);
+            let addr_2: uint16_t = nextw(z, io);
+            ww(addr_2, (*z).c2rust_unnamed_2.hl, io);
             (*z).mem_ptr = (addr_2 as i32 + 1 as i32) as uint16_t;
         }
         249 => {
@@ -1688,17 +1370,14 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         227 => {
             cyc = cyc.wrapping_add(19);
-            let val: uint16_t = rw(z, (*z).sp);
-            ww(z, (*z).sp, (*z).c2rust_unnamed_2.hl);
+            let val: uint16_t = rw((*z).sp, io);
+            ww((*z).sp, (*z).c2rust_unnamed_2.hl, io);
             (*z).c2rust_unnamed_2.hl = val;
             (*z).mem_ptr = val;
         }
         135 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = addb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = addb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
@@ -1707,10 +1386,7 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         128 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = addb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = addb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*z).c2rust_unnamed_0.c2rust_unnamed.b as uint32_t,
@@ -1719,10 +1395,7 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         129 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = addb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = addb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*z).c2rust_unnamed_0.c2rust_unnamed.c as uint32_t,
@@ -1731,10 +1404,7 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         130 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = addb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = addb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*z).c2rust_unnamed_1.c2rust_unnamed.d as uint32_t,
@@ -1743,10 +1413,7 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         131 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = addb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = addb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*z).c2rust_unnamed_1.c2rust_unnamed.e as uint32_t,
@@ -1755,10 +1422,7 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         132 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = addb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = addb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*z).c2rust_unnamed_2.c2rust_unnamed.h as uint32_t,
@@ -1767,10 +1431,7 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         133 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = addb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = addb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*z).c2rust_unnamed_2.c2rust_unnamed.l as uint32_t,
@@ -1779,34 +1440,25 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         134 => {
             cyc = cyc.wrapping_add(7);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = addb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = addb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
-                rb(z, (*z).c2rust_unnamed_2.hl) as uint32_t,
+                rb((*z).c2rust_unnamed_2.hl, io) as uint32_t,
                 0 as i32 != 0,
             );
         }
         198 => {
             cyc = cyc.wrapping_add(7);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = addb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = addb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
-                nextb(z) as uint32_t,
+                nextb(z, io) as uint32_t,
                 0 as i32 != 0,
             );
         }
         143 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = addb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = addb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
@@ -1815,10 +1467,7 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         136 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = addb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = addb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*z).c2rust_unnamed_0.c2rust_unnamed.b as uint32_t,
@@ -1827,10 +1476,7 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         137 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = addb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = addb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*z).c2rust_unnamed_0.c2rust_unnamed.c as uint32_t,
@@ -1839,10 +1485,7 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         138 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = addb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = addb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*z).c2rust_unnamed_1.c2rust_unnamed.d as uint32_t,
@@ -1851,10 +1494,7 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         139 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = addb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = addb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*z).c2rust_unnamed_1.c2rust_unnamed.e as uint32_t,
@@ -1863,10 +1503,7 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         140 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = addb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = addb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*z).c2rust_unnamed_2.c2rust_unnamed.h as uint32_t,
@@ -1875,10 +1512,7 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         141 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = addb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = addb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*z).c2rust_unnamed_2.c2rust_unnamed.l as uint32_t,
@@ -1887,34 +1521,25 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         142 => {
             cyc = cyc.wrapping_add(7);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = addb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = addb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
-                rb(z, (*z).c2rust_unnamed_2.hl) as uint32_t,
+                rb((*z).c2rust_unnamed_2.hl, io) as uint32_t,
                 flag_get(z, cf),
             );
         }
         206 => {
             cyc = cyc.wrapping_add(7);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = addb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = addb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
-                nextb(z) as uint32_t,
+                nextb(z, io) as uint32_t,
                 flag_get(z, cf),
             );
         }
         151 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = subb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = subb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
@@ -1923,10 +1548,7 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         144 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = subb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = subb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*z).c2rust_unnamed_0.c2rust_unnamed.b as uint32_t,
@@ -1935,10 +1557,7 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         145 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = subb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = subb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*z).c2rust_unnamed_0.c2rust_unnamed.c as uint32_t,
@@ -1947,10 +1566,7 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         146 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = subb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = subb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*z).c2rust_unnamed_1.c2rust_unnamed.d as uint32_t,
@@ -1959,10 +1575,7 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         147 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = subb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = subb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*z).c2rust_unnamed_1.c2rust_unnamed.e as uint32_t,
@@ -1971,10 +1584,7 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         148 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = subb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = subb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*z).c2rust_unnamed_2.c2rust_unnamed.h as uint32_t,
@@ -1983,10 +1593,7 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         149 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = subb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = subb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*z).c2rust_unnamed_2.c2rust_unnamed.l as uint32_t,
@@ -1995,34 +1602,25 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         150 => {
             cyc = cyc.wrapping_add(7);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = subb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = subb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
-                rb(z, (*z).c2rust_unnamed_2.hl) as uint32_t,
+                rb((*z).c2rust_unnamed_2.hl, io) as uint32_t,
                 0 as i32 != 0,
             );
         }
         214 => {
             cyc = cyc.wrapping_add(7);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = subb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = subb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
-                nextb(z) as uint32_t,
+                nextb(z, io) as uint32_t,
                 0 as i32 != 0,
             );
         }
         159 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = subb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = subb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
@@ -2031,10 +1629,7 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         152 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = subb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = subb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*z).c2rust_unnamed_0.c2rust_unnamed.b as uint32_t,
@@ -2043,10 +1638,7 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         153 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = subb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = subb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*z).c2rust_unnamed_0.c2rust_unnamed.c as uint32_t,
@@ -2055,10 +1647,7 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         154 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = subb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = subb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*z).c2rust_unnamed_1.c2rust_unnamed.d as uint32_t,
@@ -2067,10 +1656,7 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         155 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = subb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = subb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*z).c2rust_unnamed_1.c2rust_unnamed.e as uint32_t,
@@ -2079,10 +1665,7 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         156 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = subb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = subb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*z).c2rust_unnamed_2.c2rust_unnamed.h as uint32_t,
@@ -2091,10 +1674,7 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         157 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = subb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = subb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*z).c2rust_unnamed_2.c2rust_unnamed.l as uint32_t,
@@ -2103,25 +1683,19 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         158 => {
             cyc = cyc.wrapping_add(7);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = subb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = subb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
-                rb(z, (*z).c2rust_unnamed_2.hl) as uint32_t,
+                rb((*z).c2rust_unnamed_2.hl, io) as uint32_t,
                 flag_get(z, cf),
             );
         }
         222 => {
             cyc = cyc.wrapping_add(7);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = subb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = subb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
-                nextb(z) as uint32_t,
+                nextb(z, io) as uint32_t,
                 flag_get(z, cf),
             );
         }
@@ -2159,111 +1733,69 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         60 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = inc(z, (*z).c2rust_unnamed.c2rust_unnamed.a);
+            (*z).c2rust_unnamed.c2rust_unnamed.a = inc(z, (*z).c2rust_unnamed.c2rust_unnamed.a);
         }
         4 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_0
-                .c2rust_unnamed
-                .b = inc(z, (*z).c2rust_unnamed_0.c2rust_unnamed.b);
+            (*z).c2rust_unnamed_0.c2rust_unnamed.b = inc(z, (*z).c2rust_unnamed_0.c2rust_unnamed.b);
         }
         12 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_0
-                .c2rust_unnamed
-                .c = inc(z, (*z).c2rust_unnamed_0.c2rust_unnamed.c);
+            (*z).c2rust_unnamed_0.c2rust_unnamed.c = inc(z, (*z).c2rust_unnamed_0.c2rust_unnamed.c);
         }
         20 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_1
-                .c2rust_unnamed
-                .d = inc(z, (*z).c2rust_unnamed_1.c2rust_unnamed.d);
+            (*z).c2rust_unnamed_1.c2rust_unnamed.d = inc(z, (*z).c2rust_unnamed_1.c2rust_unnamed.d);
         }
         28 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_1
-                .c2rust_unnamed
-                .e = inc(z, (*z).c2rust_unnamed_1.c2rust_unnamed.e);
+            (*z).c2rust_unnamed_1.c2rust_unnamed.e = inc(z, (*z).c2rust_unnamed_1.c2rust_unnamed.e);
         }
         36 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_2
-                .c2rust_unnamed
-                .h = inc(z, (*z).c2rust_unnamed_2.c2rust_unnamed.h);
+            (*z).c2rust_unnamed_2.c2rust_unnamed.h = inc(z, (*z).c2rust_unnamed_2.c2rust_unnamed.h);
         }
         44 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_2
-                .c2rust_unnamed
-                .l = inc(z, (*z).c2rust_unnamed_2.c2rust_unnamed.l);
+            (*z).c2rust_unnamed_2.c2rust_unnamed.l = inc(z, (*z).c2rust_unnamed_2.c2rust_unnamed.l);
         }
         52 => {
             cyc = cyc.wrapping_add(11);
-            let mut result: uint8_t = inc(z, rb(z, (*z).c2rust_unnamed_2.hl));
-            wb(z, (*z).c2rust_unnamed_2.hl, result);
+            let mut result: uint8_t = inc(z, rb((*z).c2rust_unnamed_2.hl, io));
+            wb((*z).c2rust_unnamed_2.hl, result, io);
         }
         61 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = dec(z, (*z).c2rust_unnamed.c2rust_unnamed.a);
+            (*z).c2rust_unnamed.c2rust_unnamed.a = dec(z, (*z).c2rust_unnamed.c2rust_unnamed.a);
         }
         5 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_0
-                .c2rust_unnamed
-                .b = dec(z, (*z).c2rust_unnamed_0.c2rust_unnamed.b);
+            (*z).c2rust_unnamed_0.c2rust_unnamed.b = dec(z, (*z).c2rust_unnamed_0.c2rust_unnamed.b);
         }
         13 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_0
-                .c2rust_unnamed
-                .c = dec(z, (*z).c2rust_unnamed_0.c2rust_unnamed.c);
+            (*z).c2rust_unnamed_0.c2rust_unnamed.c = dec(z, (*z).c2rust_unnamed_0.c2rust_unnamed.c);
         }
         21 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_1
-                .c2rust_unnamed
-                .d = dec(z, (*z).c2rust_unnamed_1.c2rust_unnamed.d);
+            (*z).c2rust_unnamed_1.c2rust_unnamed.d = dec(z, (*z).c2rust_unnamed_1.c2rust_unnamed.d);
         }
         29 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_1
-                .c2rust_unnamed
-                .e = dec(z, (*z).c2rust_unnamed_1.c2rust_unnamed.e);
+            (*z).c2rust_unnamed_1.c2rust_unnamed.e = dec(z, (*z).c2rust_unnamed_1.c2rust_unnamed.e);
         }
         37 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_2
-                .c2rust_unnamed
-                .h = dec(z, (*z).c2rust_unnamed_2.c2rust_unnamed.h);
+            (*z).c2rust_unnamed_2.c2rust_unnamed.h = dec(z, (*z).c2rust_unnamed_2.c2rust_unnamed.h);
         }
         45 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed_2
-                .c2rust_unnamed
-                .l = dec(z, (*z).c2rust_unnamed_2.c2rust_unnamed.l);
+            (*z).c2rust_unnamed_2.c2rust_unnamed.l = dec(z, (*z).c2rust_unnamed_2.c2rust_unnamed.l);
         }
         53 => {
             cyc = cyc.wrapping_add(11);
-            let mut result_0: uint8_t = dec(z, rb(z, (*z).c2rust_unnamed_2.hl));
-            wb(z, (*z).c2rust_unnamed_2.hl, result_0);
+            let mut result_0: uint8_t = dec(z, rb((*z).c2rust_unnamed_2.hl, io));
+            wb((*z).c2rust_unnamed_2.hl, result_0, io);
         }
         3 => {
             cyc = cyc.wrapping_add(6);
@@ -2303,23 +1835,19 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         47 => {
             cyc = cyc.wrapping_add(4);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = !((*z).c2rust_unnamed.c2rust_unnamed.a as i32) as uint8_t;
+            (*z).c2rust_unnamed.c2rust_unnamed.a =
+                !((*z).c2rust_unnamed.c2rust_unnamed.a as i32) as uint8_t;
             flag_set(z, nf, 1 as i32 != 0);
             flag_set(z, hf, 1 as i32 != 0);
             flag_set(
                 z,
                 xf,
-                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 3 as i32
-                    & 1 as i32 != 0,
+                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 3 as i32 & 1 as i32 != 0,
             );
             flag_set(
                 z,
                 yf,
-                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 5 as i32
-                    & 1 as i32 != 0,
+                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 5 as i32 & 1 as i32 != 0,
             );
         }
         55 => {
@@ -2330,14 +1858,12 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
             flag_set(
                 z,
                 xf,
-                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 3 as i32
-                    & 1 as i32 != 0,
+                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 3 as i32 & 1 as i32 != 0,
             );
             flag_set(
                 z,
                 yf,
-                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 5 as i32
-                    & 1 as i32 != 0,
+                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 5 as i32 & 1 as i32 != 0,
             );
         }
         63 => {
@@ -2348,14 +1874,12 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
             flag_set(
                 z,
                 xf,
-                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 3 as i32
-                    & 1 as i32 != 0,
+                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 3 as i32 & 1 as i32 != 0,
             );
             flag_set(
                 z,
                 yf,
-                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 5 as i32
-                    & 1 as i32 != 0,
+                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 5 as i32 & 1 as i32 != 0,
             );
         }
         7 => {
@@ -2363,27 +1887,23 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
             flag_set(
                 z,
                 cf,
-                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 7 as i32
-                    != 0,
+                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 7 as i32 != 0,
             );
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = (((*z).c2rust_unnamed.c2rust_unnamed.a as i32)
-                << 1 as i32 | flag_get(z, cf) as i32) as uint8_t;
+            (*z).c2rust_unnamed.c2rust_unnamed.a = (((*z).c2rust_unnamed.c2rust_unnamed.a as i32)
+                << 1 as i32
+                | flag_get(z, cf) as i32)
+                as uint8_t;
             flag_set(z, nf, 0 as i32 != 0);
             flag_set(z, hf, 0 as i32 != 0);
             flag_set(
                 z,
                 xf,
-                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 3 as i32
-                    & 1 as i32 != 0,
+                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 3 as i32 & 1 as i32 != 0,
             );
             flag_set(
                 z,
                 yf,
-                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 5 as i32
-                    & 1 as i32 != 0,
+                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 5 as i32 & 1 as i32 != 0,
             );
         }
         15 => {
@@ -2391,28 +1911,22 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
             flag_set(
                 z,
                 cf,
-                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 & 1 as i32
-                    != 0,
+                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 & 1 as i32 != 0,
             );
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = ((*z).c2rust_unnamed.c2rust_unnamed.a as i32
-                >> 1 as i32
-                | (flag_get(z, cf) as i32) << 7 as i32) as uint8_t;
+            (*z).c2rust_unnamed.c2rust_unnamed.a =
+                ((*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 1 as i32
+                    | (flag_get(z, cf) as i32) << 7 as i32) as uint8_t;
             flag_set(z, nf, 0 as i32 != 0);
             flag_set(z, hf, 0 as i32 != 0);
             flag_set(
                 z,
                 xf,
-                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 3 as i32
-                    & 1 as i32 != 0,
+                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 3 as i32 & 1 as i32 != 0,
             );
             flag_set(
                 z,
                 yf,
-                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 5 as i32
-                    & 1 as i32 != 0,
+                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 5 as i32 & 1 as i32 != 0,
             );
         }
         23 => {
@@ -2421,27 +1935,21 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
             flag_set(
                 z,
                 cf,
-                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 7 as i32
-                    != 0,
+                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 7 as i32 != 0,
             );
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = (((*z).c2rust_unnamed.c2rust_unnamed.a as i32)
-                << 1 as i32 | cy as i32) as uint8_t;
+            (*z).c2rust_unnamed.c2rust_unnamed.a =
+                (((*z).c2rust_unnamed.c2rust_unnamed.a as i32) << 1 as i32 | cy as i32) as uint8_t;
             flag_set(z, nf, 0 as i32 != 0);
             flag_set(z, hf, 0 as i32 != 0);
             flag_set(
                 z,
                 xf,
-                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 3 as i32
-                    & 1 as i32 != 0,
+                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 3 as i32 & 1 as i32 != 0,
             );
             flag_set(
                 z,
                 yf,
-                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 5 as i32
-                    & 1 as i32 != 0,
+                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 5 as i32 & 1 as i32 != 0,
             );
         }
         31 => {
@@ -2450,28 +1958,22 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
             flag_set(
                 z,
                 cf,
-                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 & 1 as i32
-                    != 0,
+                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 & 1 as i32 != 0,
             );
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = ((*z).c2rust_unnamed.c2rust_unnamed.a as i32
-                >> 1 as i32 | (cy_0 as i32) << 7 as i32)
-                as uint8_t;
+            (*z).c2rust_unnamed.c2rust_unnamed.a =
+                ((*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 1 as i32
+                    | (cy_0 as i32) << 7 as i32) as uint8_t;
             flag_set(z, nf, 0 as i32 != 0);
             flag_set(z, hf, 0 as i32 != 0);
             flag_set(
                 z,
                 xf,
-                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 3 as i32
-                    & 1 as i32 != 0,
+                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 3 as i32 & 1 as i32 != 0,
             );
             flag_set(
                 z,
                 yf,
-                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 5 as i32
-                    & 1 as i32 != 0,
+                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 5 as i32 & 1 as i32 != 0,
             );
         }
         167 => {
@@ -2504,11 +2006,11 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         166 => {
             cyc = cyc.wrapping_add(7);
-            land(z, rb(z, (*z).c2rust_unnamed_2.hl));
+            land(z, rb((*z).c2rust_unnamed_2.hl, io));
         }
         230 => {
             cyc = cyc.wrapping_add(7);
-            land(z, nextb(z));
+            land(z, nextb(z, io));
         }
         175 => {
             cyc = cyc.wrapping_add(4);
@@ -2540,11 +2042,11 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         174 => {
             cyc = cyc.wrapping_add(7);
-            lxor(z, rb(z, (*z).c2rust_unnamed_2.hl));
+            lxor(z, rb((*z).c2rust_unnamed_2.hl, io));
         }
         238 => {
             cyc = cyc.wrapping_add(7);
-            lxor(z, nextb(z));
+            lxor(z, nextb(z, io));
         }
         183 => {
             cyc = cyc.wrapping_add(4);
@@ -2576,11 +2078,11 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         182 => {
             cyc = cyc.wrapping_add(7);
-            lor(z, rb(z, (*z).c2rust_unnamed_2.hl));
+            lor(z, rb((*z).c2rust_unnamed_2.hl, io));
         }
         246 => {
             cyc = cyc.wrapping_add(7);
-            lor(z, nextb(z));
+            lor(z, nextb(z, io));
         }
         191 => {
             cyc = cyc.wrapping_add(4);
@@ -2612,94 +2114,77 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         190 => {
             cyc = cyc.wrapping_add(7);
-            cp(z, rb(z, (*z).c2rust_unnamed_2.hl) as uint32_t);
+            cp(z, rb((*z).c2rust_unnamed_2.hl, io) as uint32_t);
         }
         254 => {
             cyc = cyc.wrapping_add(7);
-            cp(z, nextb(z) as uint32_t);
+            cp(z, nextb(z, io) as uint32_t);
         }
         195 => {
             cyc = cyc.wrapping_add(10);
-            jump(z, nextw(z));
+            jump(z, nextw(z, io));
         }
         194 => {
             cyc = cyc.wrapping_add(10);
-            cond_jump(z, flag_get(z, zf) as i32 == 0 as i32);
+            cond_jump(z, flag_get(z, zf) as i32 == 0 as i32, io);
         }
         202 => {
             cyc = cyc.wrapping_add(10);
-            cond_jump(z, flag_get(z, zf) as i32 == 1 as i32);
+            cond_jump(z, flag_get(z, zf) as i32 == 1 as i32, io);
         }
         210 => {
             cyc = cyc.wrapping_add(10);
-            cond_jump(z, flag_get(z, cf) as i32 == 0 as i32);
+            cond_jump(z, flag_get(z, cf) as i32 == 0 as i32, io);
         }
         218 => {
             cyc = cyc.wrapping_add(10);
-            cond_jump(z, flag_get(z, cf) as i32 == 1 as i32);
+            cond_jump(z, flag_get(z, cf) as i32 == 1 as i32, io);
         }
         226 => {
             cyc = cyc.wrapping_add(10);
-            cond_jump(z, flag_get(z, pf) as i32 == 0 as i32);
+            cond_jump(z, flag_get(z, pf) as i32 == 0 as i32, io);
         }
         234 => {
             cyc = cyc.wrapping_add(10);
-            cond_jump(z, flag_get(z, pf) as i32 == 1 as i32);
+            cond_jump(z, flag_get(z, pf) as i32 == 1 as i32, io);
         }
         242 => {
             cyc = cyc.wrapping_add(10);
-            cond_jump(z, flag_get(z, sf) as i32 == 0 as i32);
+            cond_jump(z, flag_get(z, sf) as i32 == 0 as i32, io);
         }
         250 => {
             cyc = cyc.wrapping_add(10);
-            cond_jump(z, flag_get(z, sf) as i32 == 1 as i32);
+            cond_jump(z, flag_get(z, sf) as i32 == 1 as i32, io);
         }
         16 => {
             cyc = cyc.wrapping_add(8);
-            (*z)
-                .c2rust_unnamed_0
-                .c2rust_unnamed
-                .b = ((*z).c2rust_unnamed_0.c2rust_unnamed.b).wrapping_sub(1);
-            cyc = cyc
-                .wrapping_add(
-                    cond_jr(
-                        z,
-                        (*z).c2rust_unnamed_0.c2rust_unnamed.b as i32
-                            != 0 as i32,
-                    ),
-                );
+            (*z).c2rust_unnamed_0.c2rust_unnamed.b =
+                ((*z).c2rust_unnamed_0.c2rust_unnamed.b).wrapping_sub(1);
+            cyc = cyc.wrapping_add(cond_jr(
+                z,
+                (*z).c2rust_unnamed_0.c2rust_unnamed.b as i32 != 0 as i32,
+                io,
+            ));
         }
         24 => {
             cyc = cyc.wrapping_add(12);
-            jr(z, nextb(z) as int8_t);
+            jr(z, nextb(z, io) as int8_t);
         }
         32 => {
             cyc = cyc.wrapping_add(7);
-            cyc = cyc
-                .wrapping_add(
-                    cond_jr(z, flag_get(z, zf) as i32 == 0 as i32),
-                );
+            cyc = cyc.wrapping_add(cond_jr(z, flag_get(z, zf) as i32 == 0 as i32, io));
         }
         40 => {
             cyc = cyc.wrapping_add(7);
-            cyc = cyc
-                .wrapping_add(
-                    cond_jr(z, flag_get(z, zf) as i32 == 1 as i32),
-                );
+            cyc = cyc.wrapping_add(cond_jr(z, flag_get(z, zf) as i32 == 1 as i32, io));
         }
         48 => {
             cyc = cyc.wrapping_add(7);
-            cyc = cyc
-                .wrapping_add(
-                    cond_jr(z, flag_get(z, cf) as i32 == 0 as i32),
-                );
+            cyc = cyc.wrapping_add(cond_jr(z, flag_get(z, cf) as i32 == 0 as i32, io));
         }
         56 => {
             cyc = cyc.wrapping_add(7);
-            cyc = cyc
-                .wrapping_add(
-                    cond_jr(z, flag_get(z, cf) as i32 == 1 as i32),
-                );
+            cyc = cyc.wrapping_add(cond_jr(z, flag_get(z, cf) as i32 == 1 as i32, io));
         }
         233 => {
             cyc = cyc.wrapping_add(4);
@@ -2707,210 +2192,157 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         205 => {
             cyc = cyc.wrapping_add(17);
-            call(z, nextw(z));
+            call(z, nextw(z, io), io);
         }
         196 => {
             cyc = cyc.wrapping_add(10);
-            cyc = cyc
-                .wrapping_add(
-                    cond_call(z, flag_get(z, zf) as i32 == 0 as i32),
-                );
+            cyc = cyc.wrapping_add(cond_call(z, flag_get(z, zf) as i32 == 0 as i32, io));
         }
         204 => {
             cyc = cyc.wrapping_add(10);
-            cyc = cyc
-                .wrapping_add(
-                    cond_call(z, flag_get(z, zf) as i32 == 1 as i32),
-                );
+            cyc = cyc.wrapping_add(cond_call(z, flag_get(z, zf) as i32 == 1 as i32, io));
         }
         212 => {
             cyc = cyc.wrapping_add(10);
-            cyc = cyc
-                .wrapping_add(
-                    cond_call(z, flag_get(z, cf) as i32 == 0 as i32),
-                );
+            cyc = cyc.wrapping_add(cond_call(z, flag_get(z, cf) as i32 == 0 as i32, io));
         }
         220 => {
             cyc = cyc.wrapping_add(10);
-            cyc = cyc
-                .wrapping_add(
-                    cond_call(z, flag_get(z, cf) as i32 == 1 as i32),
-                );
+            cyc = cyc.wrapping_add(cond_call(z, flag_get(z, cf) as i32 == 1 as i32, io));
         }
         228 => {
             cyc = cyc.wrapping_add(10);
-            cyc = cyc
-                .wrapping_add(
-                    cond_call(z, flag_get(z, pf) as i32 == 0 as i32),
-                );
+            cyc = cyc.wrapping_add(cond_call(z, flag_get(z, pf) as i32 == 0 as i32, io));
         }
         236 => {
             cyc = cyc.wrapping_add(10);
-            cyc = cyc
-                .wrapping_add(
-                    cond_call(z, flag_get(z, pf) as i32 == 1 as i32),
-                );
+            cyc = cyc.wrapping_add(cond_call(z, flag_get(z, pf) as i32 == 1 as i32, io));
         }
         244 => {
             cyc = cyc.wrapping_add(10);
-            cyc = cyc
-                .wrapping_add(
-                    cond_call(z, flag_get(z, sf) as i32 == 0 as i32),
-                );
+            cyc = cyc.wrapping_add(cond_call(z, flag_get(z, sf) as i32 == 0 as i32, io));
         }
         252 => {
             cyc = cyc.wrapping_add(10);
-            cyc = cyc
-                .wrapping_add(
-                    cond_call(z, flag_get(z, sf) as i32 == 1 as i32),
-                );
+            cyc = cyc.wrapping_add(cond_call(z, flag_get(z, sf) as i32 == 1 as i32, io));
         }
         201 => {
             cyc = cyc.wrapping_add(10);
-            ret(z);
+            ret(z, io);
         }
         192 => {
             cyc = cyc.wrapping_add(5);
-            cyc = cyc
-                .wrapping_add(
-                    cond_ret(z, flag_get(z, zf) as i32 == 0 as i32),
-                );
+            cyc = cyc.wrapping_add(cond_ret(z, flag_get(z, zf) as i32 == 0 as i32, io));
         }
         200 => {
             cyc = cyc.wrapping_add(5);
-            cyc = cyc
-                .wrapping_add(
-                    cond_ret(z, flag_get(z, zf) as i32 == 1 as i32),
-                );
+            cyc = cyc.wrapping_add(cond_ret(z, flag_get(z, zf) as i32 == 1 as i32, io));
         }
         208 => {
             cyc = cyc.wrapping_add(5);
-            cyc = cyc
-                .wrapping_add(
-                    cond_ret(z, flag_get(z, cf) as i32 == 0 as i32),
-                );
+            cyc = cyc.wrapping_add(cond_ret(z, flag_get(z, cf) as i32 == 0 as i32, io));
         }
         216 => {
             cyc = cyc.wrapping_add(5);
-            cyc = cyc
-                .wrapping_add(
-                    cond_ret(z, flag_get(z, cf) as i32 == 1 as i32),
-                );
+            cyc = cyc.wrapping_add(cond_ret(z, flag_get(z, cf) as i32 == 1 as i32, io));
         }
         224 => {
             cyc = cyc.wrapping_add(5);
-            cyc = cyc
-                .wrapping_add(
-                    cond_ret(z, flag_get(z, pf) as i32 == 0 as i32),
-                );
+            cyc = cyc.wrapping_add(cond_ret(z, flag_get(z, pf) as i32 == 0 as i32, io));
         }
         232 => {
             cyc = cyc.wrapping_add(5);
-            cyc = cyc
-                .wrapping_add(
-                    cond_ret(z, flag_get(z, pf) as i32 == 1 as i32),
-                );
+            cyc = cyc.wrapping_add(cond_ret(z, flag_get(z, pf) as i32 == 1 as i32, io));
         }
         240 => {
             cyc = cyc.wrapping_add(5);
-            cyc = cyc
-                .wrapping_add(
-                    cond_ret(z, flag_get(z, sf) as i32 == 0 as i32),
-                );
+            cyc = cyc.wrapping_add(cond_ret(z, flag_get(z, sf) as i32 == 0 as i32, io));
         }
         248 => {
             cyc = cyc.wrapping_add(5);
-            cyc = cyc
-                .wrapping_add(
-                    cond_ret(z, flag_get(z, sf) as i32 == 1 as i32),
-                );
+            cyc = cyc.wrapping_add(cond_ret(z, flag_get(z, sf) as i32 == 1 as i32, io));
         }
         199 => {
             cyc = cyc.wrapping_add(11);
-            call(z, 0 as i32 as uint16_t);
+            call(z, 0 as i32 as uint16_t, io);
         }
         207 => {
             cyc = cyc.wrapping_add(11);
-            call(z, 0x8 as i32 as uint16_t);
+            call(z, 0x8 as i32 as uint16_t, io);
         }
         215 => {
             cyc = cyc.wrapping_add(11);
-            call(z, 0x10 as i32 as uint16_t);
+            call(z, 0x10 as i32 as uint16_t, io);
         }
         223 => {
             cyc = cyc.wrapping_add(11);
-            call(z, 0x18 as i32 as uint16_t);
+            call(z, 0x18 as i32 as uint16_t, io);
         }
         231 => {
             cyc = cyc.wrapping_add(11);
-            call(z, 0x20 as i32 as uint16_t);
+            call(z, 0x20 as i32 as uint16_t, io);
         }
         239 => {
             cyc = cyc.wrapping_add(11);
-            call(z, 0x28 as i32 as uint16_t);
+            call(z, 0x28 as i32 as uint16_t, io);
         }
         247 => {
             cyc = cyc.wrapping_add(11);
-            call(z, 0x30 as i32 as uint16_t);
+            call(z, 0x30 as i32 as uint16_t, io);
         }
         255 => {
             cyc = cyc.wrapping_add(11);
-            call(z, 0x38 as i32 as uint16_t);
+            call(z, 0x38 as i32 as uint16_t, io);
         }
         197 => {
             cyc = cyc.wrapping_add(11);
-            pushw(z, (*z).c2rust_unnamed_0.bc);
+            pushw(z, (*z).c2rust_unnamed_0.bc, io);
         }
         213 => {
             cyc = cyc.wrapping_add(11);
-            pushw(z, (*z).c2rust_unnamed_1.de);
+            pushw(z, (*z).c2rust_unnamed_1.de, io);
         }
         229 => {
             cyc = cyc.wrapping_add(11);
-            pushw(z, (*z).c2rust_unnamed_2.hl);
+            pushw(z, (*z).c2rust_unnamed_2.hl, io);
         }
         245 => {
             cyc = cyc.wrapping_add(11);
-            pushw(z, (*z).c2rust_unnamed.af);
+            pushw(z, (*z).c2rust_unnamed.af, io);
         }
         193 => {
             cyc = cyc.wrapping_add(10);
-            (*z).c2rust_unnamed_0.bc = popw(z);
+            (*z).c2rust_unnamed_0.bc = popw(z, io);
         }
         209 => {
             cyc = cyc.wrapping_add(10);
-            (*z).c2rust_unnamed_1.de = popw(z);
+            (*z).c2rust_unnamed_1.de = popw(z, io);
         }
         225 => {
             cyc = cyc.wrapping_add(10);
-            (*z).c2rust_unnamed_2.hl = popw(z);
+            (*z).c2rust_unnamed_2.hl = popw(z, io);
         }
         241 => {
             cyc = cyc.wrapping_add(10);
-            (*z).c2rust_unnamed.af = popw(z);
+            (*z).c2rust_unnamed.af = popw(z, io);
         }
         219 => {
             cyc = cyc.wrapping_add(11);
-            let port: uint16_t = (nextb(z) as i32
-                | ((*z).c2rust_unnamed.c2rust_unnamed.a as i32)
-                    << 8 as i32) as uint16_t;
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = (*z).internal_port_in(port);
+            let port: uint16_t = (nextb(z, io) as i32
+                | ((*z).c2rust_unnamed.c2rust_unnamed.a as i32) << 8 as i32)
+                as uint16_t;
+            (*z).c2rust_unnamed.c2rust_unnamed.a = (*z).internal_port_in(port, io);
             (*z).mem_ptr = (port as i32 + 1 as i32) as uint16_t;
         }
         211 => {
             cyc = cyc.wrapping_add(11);
-            let port_0: uint16_t = (nextb(z) as i32
-                | ((*z).c2rust_unnamed.c2rust_unnamed.a as i32)
-                    << 8 as i32) as uint16_t;
-            (*z).internal_port_out(port_0, (*z).c2rust_unnamed.c2rust_unnamed.a);
-            (*z)
-                .mem_ptr = (port_0 as i32 + 1 as i32
-                & 0xff as i32
-                | ((*z).c2rust_unnamed.c2rust_unnamed.a as i32)
-                    << 8 as i32) as uint16_t;
+            let port_0: uint16_t = (nextb(z, io) as i32
+                | ((*z).c2rust_unnamed.c2rust_unnamed.a as i32) << 8 as i32)
+                as uint16_t;
+            (*z).internal_port_out(port_0, (*z).c2rust_unnamed.c2rust_unnamed.a, io);
+            (*z).mem_ptr = (port_0 as i32 + 1 as i32 & 0xff as i32
+                | ((*z).c2rust_unnamed.c2rust_unnamed.a as i32) << 8 as i32)
+                as uint16_t;
         }
         8 => {
             cyc = cyc.wrapping_add(4);
@@ -2932,39 +2364,40 @@ unsafe fn exec_opcode<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
         }
         203 => {
             cyc = cyc.wrapping_add(0);
-            cyc = cyc.wrapping_add(exec_opcode_cb(z, nextb(z)));
+            cyc = cyc.wrapping_add(exec_opcode_cb(z, nextb(z, io), io));
         }
         237 => {
             cyc = cyc.wrapping_add(0);
-            cyc = cyc.wrapping_add(exec_opcode_ed(z, nextb(z)));
+            cyc = cyc.wrapping_add(exec_opcode_ed(z, nextb(z, io), io));
         }
         221 => {
             cyc = cyc.wrapping_add(0);
-            cyc = cyc.wrapping_add(exec_opcode_ddfd(z, nextb(z), &mut (*z).ix));
+            cyc = cyc.wrapping_add(exec_opcode_ddfd(z, nextb(z, io), &mut (*z).ix, io));
         }
         253 => {
             cyc = cyc.wrapping_add(0);
-            cyc = cyc.wrapping_add(exec_opcode_ddfd(z, nextb(z), &mut (*z).iy));
+            cyc = cyc.wrapping_add(exec_opcode_ddfd(z, nextb(z, io), &mut (*z).iy, io));
         }
         _ => {}
     }
     return cyc;
 }
-unsafe fn exec_opcode_ddfd<T: Z80_io>(
-    z: *mut Z80<T>,
+unsafe fn exec_opcode_ddfd(
+    z: *mut Z80,
     mut opcode: uint8_t,
     iz: *mut uint16_t,
+    io: &mut impl Z80_io,
 ) -> u32 {
     let mut cyc: u32 = 0;
     inc_r(z);
     match opcode as i32 {
         225 => {
             cyc = cyc.wrapping_add(14);
-            *iz = popw(z);
+            *iz = popw(z, io);
         }
         229 => {
             cyc = cyc.wrapping_add(15);
-            pushw(z, *iz);
+            pushw(z, *iz, io);
         }
         233 => {
             cyc = cyc.wrapping_add(8);
@@ -2988,10 +2421,7 @@ unsafe fn exec_opcode_ddfd<T: Z80_io>(
         }
         132 => {
             cyc = cyc.wrapping_add(8);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = addb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = addb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*iz as i32 >> 8 as i32) as uint32_t,
@@ -3000,10 +2430,7 @@ unsafe fn exec_opcode_ddfd<T: Z80_io>(
         }
         133 => {
             cyc = cyc.wrapping_add(8);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = addb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = addb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*iz as i32 & 0xff as i32) as uint32_t,
@@ -3012,10 +2439,7 @@ unsafe fn exec_opcode_ddfd<T: Z80_io>(
         }
         140 => {
             cyc = cyc.wrapping_add(8);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = addb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = addb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*iz as i32 >> 8 as i32) as uint32_t,
@@ -3024,10 +2448,7 @@ unsafe fn exec_opcode_ddfd<T: Z80_io>(
         }
         141 => {
             cyc = cyc.wrapping_add(8);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = addb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = addb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*iz as i32 & 0xff as i32) as uint32_t,
@@ -3036,58 +2457,43 @@ unsafe fn exec_opcode_ddfd<T: Z80_io>(
         }
         134 => {
             cyc = cyc.wrapping_add(19);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = addb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = addb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
-                rb(z, displace(z, *iz, nextb(z) as int8_t)) as uint32_t,
+                rb(displace(z, *iz, nextb(z, io) as int8_t), io) as uint32_t,
                 0 as i32 != 0,
             );
         }
         142 => {
             cyc = cyc.wrapping_add(19);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = addb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = addb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
-                rb(z, displace(z, *iz, nextb(z) as int8_t)) as uint32_t,
+                rb(displace(z, *iz, nextb(z, io) as int8_t), io) as uint32_t,
                 flag_get(z, cf),
             );
         }
         150 => {
             cyc = cyc.wrapping_add(19);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = subb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = subb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
-                rb(z, displace(z, *iz, nextb(z) as int8_t)) as uint32_t,
+                rb(displace(z, *iz, nextb(z, io) as int8_t), io) as uint32_t,
                 0 as i32 != 0,
             );
         }
         158 => {
             cyc = cyc.wrapping_add(19);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = subb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = subb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
-                rb(z, displace(z, *iz, nextb(z) as int8_t)) as uint32_t,
+                rb(displace(z, *iz, nextb(z, io) as int8_t), io) as uint32_t,
                 flag_get(z, cf),
             );
         }
         148 => {
             cyc = cyc.wrapping_add(8);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = subb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = subb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*iz as i32 >> 8 as i32) as uint32_t,
@@ -3096,10 +2502,7 @@ unsafe fn exec_opcode_ddfd<T: Z80_io>(
         }
         149 => {
             cyc = cyc.wrapping_add(8);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = subb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = subb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*iz as i32 & 0xff as i32) as uint32_t,
@@ -3108,10 +2511,7 @@ unsafe fn exec_opcode_ddfd<T: Z80_io>(
         }
         156 => {
             cyc = cyc.wrapping_add(8);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = subb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = subb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*iz as i32 >> 8 as i32) as uint32_t,
@@ -3120,10 +2520,7 @@ unsafe fn exec_opcode_ddfd<T: Z80_io>(
         }
         157 => {
             cyc = cyc.wrapping_add(8);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = subb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = subb(
                 z,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
                 (*iz as i32 & 0xff as i32) as uint32_t,
@@ -3132,7 +2529,7 @@ unsafe fn exec_opcode_ddfd<T: Z80_io>(
         }
         166 => {
             cyc = cyc.wrapping_add(19);
-            land(z, rb(z, displace(z, *iz, nextb(z) as int8_t)));
+            land(z, rb(displace(z, *iz, nextb(z, io) as int8_t), io));
         }
         164 => {
             cyc = cyc.wrapping_add(8);
@@ -3144,7 +2541,7 @@ unsafe fn exec_opcode_ddfd<T: Z80_io>(
         }
         174 => {
             cyc = cyc.wrapping_add(19);
-            lxor(z, rb(z, displace(z, *iz, nextb(z) as int8_t)));
+            lxor(z, rb(displace(z, *iz, nextb(z, io) as int8_t), io));
         }
         172 => {
             cyc = cyc.wrapping_add(8);
@@ -3156,7 +2553,7 @@ unsafe fn exec_opcode_ddfd<T: Z80_io>(
         }
         182 => {
             cyc = cyc.wrapping_add(19);
-            lor(z, rb(z, displace(z, *iz, nextb(z) as int8_t)));
+            lor(z, rb(displace(z, *iz, nextb(z, io) as int8_t), io));
         }
         180 => {
             cyc = cyc.wrapping_add(8);
@@ -3168,7 +2565,10 @@ unsafe fn exec_opcode_ddfd<T: Z80_io>(
         }
         190 => {
             cyc = cyc.wrapping_add(19);
-            cp(z, rb(z, displace(z, *iz, nextb(z) as int8_t)) as uint32_t);
+            cp(
+                z,
+                rb(displace(z, *iz, nextb(z, io) as int8_t), io) as uint32_t,
+            );
         }
         188 => {
             cyc = cyc.wrapping_add(8);
@@ -3188,272 +2588,225 @@ unsafe fn exec_opcode_ddfd<T: Z80_io>(
         }
         52 => {
             cyc = cyc.wrapping_add(23);
-            let mut addr: uint16_t = displace(z, *iz, nextb(z) as int8_t);
-            wb(z, addr, inc(z, rb(z, addr)));
+            let mut addr: uint16_t = displace(z, *iz, nextb(z, io) as int8_t);
+            wb(addr, inc(z, rb(addr, io)), io);
         }
         53 => {
             cyc = cyc.wrapping_add(23);
-            let mut addr_0: uint16_t = displace(z, *iz, nextb(z) as int8_t);
-            wb(z, addr_0, dec(z, rb(z, addr_0)));
+            let mut addr_0: uint16_t = displace(z, *iz, nextb(z, io) as int8_t);
+            wb(addr_0, dec(z, rb(addr_0, io)), io);
         }
         36 => {
             cyc = cyc.wrapping_add(8);
             *iz = (*iz as i32 & 0xff as i32
-                | (inc(z, (*iz as i32 >> 8 as i32) as uint8_t)
-                    as i32) << 8 as i32) as uint16_t;
+                | (inc(z, (*iz as i32 >> 8 as i32) as uint8_t) as i32) << 8 as i32)
+                as uint16_t;
         }
         37 => {
             cyc = cyc.wrapping_add(8);
             *iz = (*iz as i32 & 0xff as i32
-                | (dec(z, (*iz as i32 >> 8 as i32) as uint8_t)
-                    as i32) << 8 as i32) as uint16_t;
+                | (dec(z, (*iz as i32 >> 8 as i32) as uint8_t) as i32) << 8 as i32)
+                as uint16_t;
         }
         44 => {
             cyc = cyc.wrapping_add(8);
             *iz = ((*iz as i32 >> 8 as i32) << 8 as i32
-                | inc(z, (*iz as i32 & 0xff as i32) as uint8_t)
-                    as i32) as uint16_t;
+                | inc(z, (*iz as i32 & 0xff as i32) as uint8_t) as i32)
+                as uint16_t;
         }
         45 => {
             cyc = cyc.wrapping_add(8);
             *iz = ((*iz as i32 >> 8 as i32) << 8 as i32
-                | dec(z, (*iz as i32 & 0xff as i32) as uint8_t)
-                    as i32) as uint16_t;
+                | dec(z, (*iz as i32 & 0xff as i32) as uint8_t) as i32)
+                as uint16_t;
         }
         42 => {
             cyc = cyc.wrapping_add(20);
-            *iz = rw(z, nextw(z));
+            *iz = rw(nextw(z, io), io);
         }
         34 => {
             cyc = cyc.wrapping_add(20);
-            ww(z, nextw(z), *iz);
+            ww(nextw(z, io), *iz, io);
         }
         33 => {
             cyc = cyc.wrapping_add(14);
-            *iz = nextw(z);
+            *iz = nextw(z, io);
         }
         54 => {
             cyc = cyc.wrapping_add(19);
-            let mut addr_1: uint16_t = displace(z, *iz, nextb(z) as int8_t);
-            wb(z, addr_1, nextb(z));
+            let mut addr_1: uint16_t = displace(z, *iz, nextb(z, io) as int8_t);
+            wb(addr_1, nextb(z, io), io);
         }
         112 => {
             cyc = cyc.wrapping_add(19);
             wb(
-                z,
-                displace(z, *iz, nextb(z) as int8_t),
+                displace(z, *iz, nextb(z, io) as int8_t),
                 (*z).c2rust_unnamed_0.c2rust_unnamed.b,
+                io,
             );
         }
         113 => {
             cyc = cyc.wrapping_add(19);
             wb(
-                z,
-                displace(z, *iz, nextb(z) as int8_t),
+                displace(z, *iz, nextb(z, io) as int8_t),
                 (*z).c2rust_unnamed_0.c2rust_unnamed.c,
+                io,
             );
         }
         114 => {
             cyc = cyc.wrapping_add(19);
             wb(
-                z,
-                displace(z, *iz, nextb(z) as int8_t),
+                displace(z, *iz, nextb(z, io) as int8_t),
                 (*z).c2rust_unnamed_1.c2rust_unnamed.d,
+                io,
             );
         }
         115 => {
             cyc = cyc.wrapping_add(19);
             wb(
-                z,
-                displace(z, *iz, nextb(z) as int8_t),
+                displace(z, *iz, nextb(z, io) as int8_t),
                 (*z).c2rust_unnamed_1.c2rust_unnamed.e,
+                io,
             );
         }
         116 => {
             cyc = cyc.wrapping_add(19);
             wb(
-                z,
-                displace(z, *iz, nextb(z) as int8_t),
+                displace(z, *iz, nextb(z, io) as int8_t),
                 (*z).c2rust_unnamed_2.c2rust_unnamed.h,
+                io,
             );
         }
         117 => {
             cyc = cyc.wrapping_add(19);
             wb(
-                z,
-                displace(z, *iz, nextb(z) as int8_t),
+                displace(z, *iz, nextb(z, io) as int8_t),
                 (*z).c2rust_unnamed_2.c2rust_unnamed.l,
+                io,
             );
         }
         119 => {
             cyc = cyc.wrapping_add(19);
             wb(
-                z,
-                displace(z, *iz, nextb(z) as int8_t),
+                displace(z, *iz, nextb(z, io) as int8_t),
                 (*z).c2rust_unnamed.c2rust_unnamed.a,
+                io,
             );
         }
         70 => {
             cyc = cyc.wrapping_add(19);
-            (*z)
-                .c2rust_unnamed_0
-                .c2rust_unnamed
-                .b = rb(z, displace(z, *iz, nextb(z) as int8_t));
+            (*z).c2rust_unnamed_0.c2rust_unnamed.b =
+                rb(displace(z, *iz, nextb(z, io) as int8_t), io);
         }
         78 => {
             cyc = cyc.wrapping_add(19);
-            (*z)
-                .c2rust_unnamed_0
-                .c2rust_unnamed
-                .c = rb(z, displace(z, *iz, nextb(z) as int8_t));
+            (*z).c2rust_unnamed_0.c2rust_unnamed.c =
+                rb(displace(z, *iz, nextb(z, io) as int8_t), io);
         }
         86 => {
             cyc = cyc.wrapping_add(19);
-            (*z)
-                .c2rust_unnamed_1
-                .c2rust_unnamed
-                .d = rb(z, displace(z, *iz, nextb(z) as int8_t));
+            (*z).c2rust_unnamed_1.c2rust_unnamed.d =
+                rb(displace(z, *iz, nextb(z, io) as int8_t), io);
         }
         94 => {
             cyc = cyc.wrapping_add(19);
-            (*z)
-                .c2rust_unnamed_1
-                .c2rust_unnamed
-                .e = rb(z, displace(z, *iz, nextb(z) as int8_t));
+            (*z).c2rust_unnamed_1.c2rust_unnamed.e =
+                rb(displace(z, *iz, nextb(z, io) as int8_t), io);
         }
         102 => {
             cyc = cyc.wrapping_add(19);
-            (*z)
-                .c2rust_unnamed_2
-                .c2rust_unnamed
-                .h = rb(z, displace(z, *iz, nextb(z) as int8_t));
+            (*z).c2rust_unnamed_2.c2rust_unnamed.h =
+                rb(displace(z, *iz, nextb(z, io) as int8_t), io);
         }
         110 => {
             cyc = cyc.wrapping_add(19);
-            (*z)
-                .c2rust_unnamed_2
-                .c2rust_unnamed
-                .l = rb(z, displace(z, *iz, nextb(z) as int8_t));
+            (*z).c2rust_unnamed_2.c2rust_unnamed.l =
+                rb(displace(z, *iz, nextb(z, io) as int8_t), io);
         }
         126 => {
             cyc = cyc.wrapping_add(19);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = rb(z, displace(z, *iz, nextb(z) as int8_t));
+            (*z).c2rust_unnamed.c2rust_unnamed.a = rb(displace(z, *iz, nextb(z, io) as int8_t), io);
         }
         68 => {
             cyc = cyc.wrapping_add(8);
-            (*z)
-                .c2rust_unnamed_0
-                .c2rust_unnamed
-                .b = (*iz as i32 >> 8 as i32) as uint8_t;
+            (*z).c2rust_unnamed_0.c2rust_unnamed.b = (*iz as i32 >> 8 as i32) as uint8_t;
         }
         76 => {
             cyc = cyc.wrapping_add(8);
-            (*z)
-                .c2rust_unnamed_0
-                .c2rust_unnamed
-                .c = (*iz as i32 >> 8 as i32) as uint8_t;
+            (*z).c2rust_unnamed_0.c2rust_unnamed.c = (*iz as i32 >> 8 as i32) as uint8_t;
         }
         84 => {
             cyc = cyc.wrapping_add(8);
-            (*z)
-                .c2rust_unnamed_1
-                .c2rust_unnamed
-                .d = (*iz as i32 >> 8 as i32) as uint8_t;
+            (*z).c2rust_unnamed_1.c2rust_unnamed.d = (*iz as i32 >> 8 as i32) as uint8_t;
         }
         92 => {
             cyc = cyc.wrapping_add(8);
-            (*z)
-                .c2rust_unnamed_1
-                .c2rust_unnamed
-                .e = (*iz as i32 >> 8 as i32) as uint8_t;
+            (*z).c2rust_unnamed_1.c2rust_unnamed.e = (*iz as i32 >> 8 as i32) as uint8_t;
         }
         124 => {
             cyc = cyc.wrapping_add(8);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = (*iz as i32 >> 8 as i32) as uint8_t;
+            (*z).c2rust_unnamed.c2rust_unnamed.a = (*iz as i32 >> 8 as i32) as uint8_t;
         }
         69 => {
             cyc = cyc.wrapping_add(8);
-            (*z)
-                .c2rust_unnamed_0
-                .c2rust_unnamed
-                .b = (*iz as i32 & 0xff as i32) as uint8_t;
+            (*z).c2rust_unnamed_0.c2rust_unnamed.b = (*iz as i32 & 0xff as i32) as uint8_t;
         }
         77 => {
             cyc = cyc.wrapping_add(8);
-            (*z)
-                .c2rust_unnamed_0
-                .c2rust_unnamed
-                .c = (*iz as i32 & 0xff as i32) as uint8_t;
+            (*z).c2rust_unnamed_0.c2rust_unnamed.c = (*iz as i32 & 0xff as i32) as uint8_t;
         }
         85 => {
             cyc = cyc.wrapping_add(8);
-            (*z)
-                .c2rust_unnamed_1
-                .c2rust_unnamed
-                .d = (*iz as i32 & 0xff as i32) as uint8_t;
+            (*z).c2rust_unnamed_1.c2rust_unnamed.d = (*iz as i32 & 0xff as i32) as uint8_t;
         }
         93 => {
             cyc = cyc.wrapping_add(8);
-            (*z)
-                .c2rust_unnamed_1
-                .c2rust_unnamed
-                .e = (*iz as i32 & 0xff as i32) as uint8_t;
+            (*z).c2rust_unnamed_1.c2rust_unnamed.e = (*iz as i32 & 0xff as i32) as uint8_t;
         }
         125 => {
             cyc = cyc.wrapping_add(8);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = (*iz as i32 & 0xff as i32) as uint8_t;
+            (*z).c2rust_unnamed.c2rust_unnamed.a = (*iz as i32 & 0xff as i32) as uint8_t;
         }
         96 => {
             cyc = cyc.wrapping_add(8);
             *iz = (*iz as i32 & 0xff as i32
-                | ((*z).c2rust_unnamed_0.c2rust_unnamed.b as i32)
-                    << 8 as i32) as uint16_t;
+                | ((*z).c2rust_unnamed_0.c2rust_unnamed.b as i32) << 8 as i32)
+                as uint16_t;
         }
         97 => {
             cyc = cyc.wrapping_add(8);
             *iz = (*iz as i32 & 0xff as i32
-                | ((*z).c2rust_unnamed_0.c2rust_unnamed.c as i32)
-                    << 8 as i32) as uint16_t;
+                | ((*z).c2rust_unnamed_0.c2rust_unnamed.c as i32) << 8 as i32)
+                as uint16_t;
         }
         98 => {
             cyc = cyc.wrapping_add(8);
             *iz = (*iz as i32 & 0xff as i32
-                | ((*z).c2rust_unnamed_1.c2rust_unnamed.d as i32)
-                    << 8 as i32) as uint16_t;
+                | ((*z).c2rust_unnamed_1.c2rust_unnamed.d as i32) << 8 as i32)
+                as uint16_t;
         }
         99 => {
             cyc = cyc.wrapping_add(8);
             *iz = (*iz as i32 & 0xff as i32
-                | ((*z).c2rust_unnamed_1.c2rust_unnamed.e as i32)
-                    << 8 as i32) as uint16_t;
+                | ((*z).c2rust_unnamed_1.c2rust_unnamed.e as i32) << 8 as i32)
+                as uint16_t;
         }
         100 => {
             cyc = cyc.wrapping_add(8);
         }
         101 => {
             cyc = cyc.wrapping_add(8);
-            *iz = ((*iz as i32 & 0xff as i32) << 8 as i32
-                | *iz as i32 & 0xff as i32) as uint16_t;
+            *iz = ((*iz as i32 & 0xff as i32) << 8 as i32 | *iz as i32 & 0xff as i32) as uint16_t;
         }
         103 => {
             cyc = cyc.wrapping_add(8);
             *iz = (*iz as i32 & 0xff as i32
-                | ((*z).c2rust_unnamed.c2rust_unnamed.a as i32)
-                    << 8 as i32) as uint16_t;
+                | ((*z).c2rust_unnamed.c2rust_unnamed.a as i32) << 8 as i32)
+                as uint16_t;
         }
         38 => {
             cyc = cyc.wrapping_add(11);
-            *iz = (*iz as i32 & 0xff as i32
-                | (nextb(z) as i32) << 8 as i32) as uint16_t;
+            *iz = (*iz as i32 & 0xff as i32 | (nextb(z, io) as i32) << 8 as i32) as uint16_t;
         }
         104 => {
             cyc = cyc.wrapping_add(8);
@@ -3477,8 +2830,7 @@ unsafe fn exec_opcode_ddfd<T: Z80_io>(
         }
         108 => {
             cyc = cyc.wrapping_add(8);
-            *iz = ((*iz as i32 >> 8 as i32) << 8 as i32
-                | *iz as i32 >> 8 as i32) as uint16_t;
+            *iz = ((*iz as i32 >> 8 as i32) << 8 as i32 | *iz as i32 >> 8 as i32) as uint16_t;
         }
         109 => {
             cyc = cyc.wrapping_add(8);
@@ -3490,8 +2842,7 @@ unsafe fn exec_opcode_ddfd<T: Z80_io>(
         }
         46 => {
             cyc = cyc.wrapping_add(11);
-            *iz = ((*iz as i32 >> 8 as i32) << 8 as i32
-                | nextb(z) as i32) as uint16_t;
+            *iz = ((*iz as i32 >> 8 as i32) << 8 as i32 | nextb(z, io) as i32) as uint16_t;
         }
         249 => {
             cyc = cyc.wrapping_add(10);
@@ -3499,37 +2850,29 @@ unsafe fn exec_opcode_ddfd<T: Z80_io>(
         }
         227 => {
             cyc = cyc.wrapping_add(23);
-            let val: uint16_t = rw(z, (*z).sp);
-            ww(z, (*z).sp, *iz);
+            let val: uint16_t = rw((*z).sp, io);
+            ww((*z).sp, *iz, io);
             *iz = val;
             (*z).mem_ptr = val;
         }
         203 => {
-            let mut addr_2: uint16_t = displace(z, *iz, nextb(z) as int8_t);
-            let mut op: uint8_t = nextb(z);
-            cyc = cyc.wrapping_add(exec_opcode_dcb(z, op, addr_2));
+            let mut addr_2: uint16_t = displace(z, *iz, nextb(z, io) as int8_t);
+            let mut op: uint8_t = nextb(z, io);
+            cyc = cyc.wrapping_add(exec_opcode_dcb(z, op, addr_2, io));
         }
         _ => {
-            cyc = cyc
-                .wrapping_add(
-                    (4_u32)
-                        .wrapping_add(exec_opcode(z, opcode)),
-                );
-            (*z)
-                .r = ((*z).r as i32 & 0x80 as i32
-                | (*z).r as i32 - 1 as i32 & 0x7f as i32)
-                as uint8_t;
+            cyc = cyc.wrapping_add((4_u32).wrapping_add(exec_opcode(z, opcode, io)));
+            (*z).r =
+                ((*z).r as i32 & 0x80 as i32 | (*z).r as i32 - 1 as i32 & 0x7f as i32) as uint8_t;
         }
     }
     return cyc;
 }
-unsafe fn exec_opcode_cb<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
+unsafe fn exec_opcode_cb(z: *mut Z80, mut opcode: uint8_t, io: &mut impl Z80_io) -> u32 {
     let mut cyc: u32 = 8;
     inc_r(z);
-    let mut x_: uint8_t = (opcode as i32 >> 6 as i32 & 3 as i32)
-        as uint8_t;
-    let mut y_: uint8_t = (opcode as i32 >> 3 as i32 & 7 as i32)
-        as uint8_t;
+    let mut x_: uint8_t = (opcode as i32 >> 6 as i32 & 3 as i32) as uint8_t;
+    let mut y_: uint8_t = (opcode as i32 >> 3 as i32 & 7 as i32) as uint8_t;
     let mut z_: uint8_t = (opcode as i32 & 7 as i32) as uint8_t;
     let mut hl: uint8_t = 0 as i32 as uint8_t;
     let mut reg: *mut uint8_t = 0 as *mut uint8_t;
@@ -3553,7 +2896,7 @@ unsafe fn exec_opcode_cb<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 
             reg = &mut (*z).c2rust_unnamed_2.c2rust_unnamed.l;
         }
         6 => {
-            hl = rb(z, (*z).c2rust_unnamed_2.hl);
+            hl = rb((*z).c2rust_unnamed_2.hl, io);
             reg = &mut hl;
         }
         7 => {
@@ -3562,145 +2905,116 @@ unsafe fn exec_opcode_cb<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 
         _ => {}
     }
     match x_ as i32 {
-        0 => {
-            match y_ as i32 {
-                0 => {
-                    *reg = cb_rlc(z, *reg);
-                }
-                1 => {
-                    *reg = cb_rrc(z, *reg);
-                }
-                2 => {
-                    *reg = cb_rl(z, *reg);
-                }
-                3 => {
-                    *reg = cb_rr(z, *reg);
-                }
-                4 => {
-                    *reg = cb_sla(z, *reg);
-                }
-                5 => {
-                    *reg = cb_sra(z, *reg);
-                }
-                6 => {
-                    *reg = cb_sll(z, *reg);
-                }
-                7 => {
-                    *reg = cb_srl(z, *reg);
-                }
-                _ => {}
+        0 => match y_ as i32 {
+            0 => {
+                *reg = cb_rlc(z, *reg);
             }
-        }
+            1 => {
+                *reg = cb_rrc(z, *reg);
+            }
+            2 => {
+                *reg = cb_rl(z, *reg);
+            }
+            3 => {
+                *reg = cb_rr(z, *reg);
+            }
+            4 => {
+                *reg = cb_sla(z, *reg);
+            }
+            5 => {
+                *reg = cb_sra(z, *reg);
+            }
+            6 => {
+                *reg = cb_sll(z, *reg);
+            }
+            7 => {
+                *reg = cb_srl(z, *reg);
+            }
+            _ => {}
+        },
         1 => {
             cb_bit(z, *reg, y_);
             if z_ as i32 == 6 as i32 {
                 flag_set(
                     z,
                     yf,
-                    (*z).mem_ptr as i32 >> 8 as i32 >> 5 as i32
-                        & 1 as i32 != 0,
+                    (*z).mem_ptr as i32 >> 8 as i32 >> 5 as i32 & 1 as i32 != 0,
                 );
                 flag_set(
                     z,
                     xf,
-                    (*z).mem_ptr as i32 >> 8 as i32 >> 3 as i32
-                        & 1 as i32 != 0,
+                    (*z).mem_ptr as i32 >> 8 as i32 >> 3 as i32 & 1 as i32 != 0,
                 );
                 cyc = cyc.wrapping_add(4);
             } else {
-                flag_set(
-                    z,
-                    yf,
-                    *reg as i32 >> 5 as i32 & 1 as i32 != 0,
-                );
-                flag_set(
-                    z,
-                    xf,
-                    *reg as i32 >> 3 as i32 & 1 as i32 != 0,
-                );
+                flag_set(z, yf, *reg as i32 >> 5 as i32 & 1 as i32 != 0);
+                flag_set(z, xf, *reg as i32 >> 3 as i32 & 1 as i32 != 0);
             }
         }
         2 => {
-            *reg = (*reg as i32 & !((1 as i32) << y_ as i32))
-                as uint8_t;
+            *reg = (*reg as i32 & !((1 as i32) << y_ as i32)) as uint8_t;
         }
         3 => {
-            *reg = (*reg as i32 | (1 as i32) << y_ as i32)
-                as uint8_t;
+            *reg = (*reg as i32 | (1 as i32) << y_ as i32) as uint8_t;
         }
         _ => {}
     }
     if x_ as i32 != 1 as i32 && z_ as i32 == 6 as i32 {
-        wb(z, (*z).c2rust_unnamed_2.hl, hl);
+        wb((*z).c2rust_unnamed_2.hl, hl, io);
         cyc = cyc.wrapping_add(7);
     }
     return cyc;
 }
-unsafe fn exec_opcode_dcb<T: Z80_io>(
-    z: *mut Z80<T>,
+unsafe fn exec_opcode_dcb(
+    z: *mut Z80,
     mut opcode: uint8_t,
     mut addr: uint16_t,
+    io: &mut impl Z80_io,
 ) -> u32 {
     let mut cyc: u32 = 0;
-    let mut val: uint8_t = rb(z, addr);
+    let mut val: uint8_t = rb(addr, io);
     let mut result: uint8_t = 0 as i32 as uint8_t;
-    let mut x_: uint8_t = (opcode as i32 >> 6 as i32 & 3 as i32)
-        as uint8_t;
-    let mut y_: uint8_t = (opcode as i32 >> 3 as i32 & 7 as i32)
-        as uint8_t;
+    let mut x_: uint8_t = (opcode as i32 >> 6 as i32 & 3 as i32) as uint8_t;
+    let mut y_: uint8_t = (opcode as i32 >> 3 as i32 & 7 as i32) as uint8_t;
     let mut z_: uint8_t = (opcode as i32 & 7 as i32) as uint8_t;
     match x_ as i32 {
-        0 => {
-            match y_ as i32 {
-                0 => {
-                    result = cb_rlc(z, val);
-                }
-                1 => {
-                    result = cb_rrc(z, val);
-                }
-                2 => {
-                    result = cb_rl(z, val);
-                }
-                3 => {
-                    result = cb_rr(z, val);
-                }
-                4 => {
-                    result = cb_sla(z, val);
-                }
-                5 => {
-                    result = cb_sra(z, val);
-                }
-                6 => {
-                    result = cb_sll(z, val);
-                }
-                7 => {
-                    result = cb_srl(z, val);
-                }
-                _ => {}
+        0 => match y_ as i32 {
+            0 => {
+                result = cb_rlc(z, val);
             }
-        }
+            1 => {
+                result = cb_rrc(z, val);
+            }
+            2 => {
+                result = cb_rl(z, val);
+            }
+            3 => {
+                result = cb_rr(z, val);
+            }
+            4 => {
+                result = cb_sla(z, val);
+            }
+            5 => {
+                result = cb_sra(z, val);
+            }
+            6 => {
+                result = cb_sll(z, val);
+            }
+            7 => {
+                result = cb_srl(z, val);
+            }
+            _ => {}
+        },
         1 => {
             result = cb_bit(z, val, y_);
-            flag_set(
-                z,
-                yf,
-                addr as i32 >> 8 as i32 >> 5 as i32
-                    & 1 as i32 != 0,
-            );
-            flag_set(
-                z,
-                xf,
-                addr as i32 >> 8 as i32 >> 3 as i32
-                    & 1 as i32 != 0,
-            );
+            flag_set(z, yf, addr as i32 >> 8 as i32 >> 5 as i32 & 1 as i32 != 0);
+            flag_set(z, xf, addr as i32 >> 8 as i32 >> 3 as i32 & 1 as i32 != 0);
         }
         2 => {
-            result = (val as i32 & !((1 as i32) << y_ as i32))
-                as uint8_t;
+            result = (val as i32 & !((1 as i32) << y_ as i32)) as uint8_t;
         }
         3 => {
-            result = (val as i32 | (1 as i32) << y_ as i32)
-                as uint8_t;
+            result = (val as i32 | (1 as i32) << y_ as i32) as uint8_t;
         }
         _ => {}
     }
@@ -3725,7 +3039,7 @@ unsafe fn exec_opcode_dcb<T: Z80_io>(
                 (*z).c2rust_unnamed_2.c2rust_unnamed.l = result;
             }
             6 => {
-                wb(z, (*z).c2rust_unnamed_2.hl, result);
+                wb((*z).c2rust_unnamed_2.hl, result, io);
             }
             7 => {
                 (*z).c2rust_unnamed.c2rust_unnamed.a = result;
@@ -3736,12 +3050,12 @@ unsafe fn exec_opcode_dcb<T: Z80_io>(
     if x_ as i32 == 1 as i32 {
         cyc = cyc.wrapping_add(20);
     } else {
-        wb(z, addr, result);
+        wb(addr, result, io);
         cyc = cyc.wrapping_add(23);
     }
     return cyc;
 }
-unsafe fn exec_opcode_ed<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 {
+unsafe fn exec_opcode_ed(z: *mut Z80, mut opcode: uint8_t, io: &mut impl Z80_io) -> u32 {
     let mut cyc: u32 = 0;
     inc_r(z);
     match opcode as i32 {
@@ -3759,8 +3073,7 @@ unsafe fn exec_opcode_ed<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 
             flag_set(
                 z,
                 sf,
-                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 7 as i32
-                    != 0,
+                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 7 as i32 != 0,
             );
             flag_set(
                 z,
@@ -3777,8 +3090,7 @@ unsafe fn exec_opcode_ed<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 
             flag_set(
                 z,
                 sf,
-                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 7 as i32
-                    != 0,
+                (*z).c2rust_unnamed.c2rust_unnamed.a as i32 >> 7 as i32 != 0,
             );
             flag_set(
                 z,
@@ -3792,19 +3104,19 @@ unsafe fn exec_opcode_ed<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 
         69 | 85 | 93 | 101 | 109 | 117 | 125 => {
             cyc = cyc.wrapping_add(14);
             (*z).iff1 = (*z).iff2;
-            ret(z);
+            ret(z, io);
         }
         77 => {
             cyc = cyc.wrapping_add(14);
-            ret(z);
+            ret(z, io);
         }
         160 => {
             cyc = cyc.wrapping_add(16);
-            ldi(z);
+            ldi(z, io);
         }
         176 => {
             cyc = cyc.wrapping_add(16);
-            ldi(z);
+            ldi(z, io);
             if (*z).c2rust_unnamed_0.bc as i32 != 0 as i32 {
                 (*z).pc = ((*z).pc as i32 - 2 as i32) as uint16_t;
                 cyc = cyc.wrapping_add(5);
@@ -3813,11 +3125,11 @@ unsafe fn exec_opcode_ed<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 
         }
         168 => {
             cyc = cyc.wrapping_add(16);
-            ldd(z);
+            ldd(z, io);
         }
         184 => {
             cyc = cyc.wrapping_add(16);
-            ldd(z);
+            ldd(z, io);
             if (*z).c2rust_unnamed_0.bc as i32 != 0 as i32 {
                 (*z).pc = ((*z).pc as i32 - 2 as i32) as uint16_t;
                 cyc = cyc.wrapping_add(5);
@@ -3826,84 +3138,74 @@ unsafe fn exec_opcode_ed<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 
         }
         161 => {
             cyc = cyc.wrapping_add(16);
-            cpi(z);
+            cpi(z, io);
         }
         169 => {
             cyc = cyc.wrapping_add(16);
-            cpd(z);
+            cpd(z, io);
         }
         177 => {
             cyc = cyc.wrapping_add(16);
-            cpi(z);
-            if (*z).c2rust_unnamed_0.bc as i32 != 0 as i32
-                && !flag_get(z, zf)
-            {
+            cpi(z, io);
+            if (*z).c2rust_unnamed_0.bc as i32 != 0 as i32 && !flag_get(z, zf) {
                 (*z).pc = ((*z).pc as i32 - 2 as i32) as uint16_t;
                 cyc = cyc.wrapping_add(5);
                 (*z).mem_ptr = ((*z).pc as i32 + 1 as i32) as uint16_t;
             } else {
-                (*z)
-                    .mem_ptr = ((*z).mem_ptr as i32 + 1 as i32)
-                    as uint16_t;
+                (*z).mem_ptr = ((*z).mem_ptr as i32 + 1 as i32) as uint16_t;
             }
         }
         185 => {
             cyc = cyc.wrapping_add(16);
-            cpd(z);
-            if (*z).c2rust_unnamed_0.bc as i32 != 0 as i32
-                && !flag_get(z, zf)
-            {
+            cpd(z, io);
+            if (*z).c2rust_unnamed_0.bc as i32 != 0 as i32 && !flag_get(z, zf) {
                 (*z).pc = ((*z).pc as i32 - 2 as i32) as uint16_t;
                 cyc = cyc.wrapping_add(5);
             } else {
-                (*z)
-                    .mem_ptr = ((*z).mem_ptr as i32 + 1 as i32)
-                    as uint16_t;
+                (*z).mem_ptr = ((*z).mem_ptr as i32 + 1 as i32) as uint16_t;
             }
         }
         64 => {
             cyc = cyc.wrapping_add(12);
-            in_r_c(z, &mut (*z).c2rust_unnamed_0.c2rust_unnamed.b);
+            in_r_c(z, &mut (*z).c2rust_unnamed_0.c2rust_unnamed.b, io);
         }
         72 => {
             cyc = cyc.wrapping_add(12);
-            in_r_c(z, &mut (*z).c2rust_unnamed_0.c2rust_unnamed.c);
+            in_r_c(z, &mut (*z).c2rust_unnamed_0.c2rust_unnamed.c, io);
         }
         80 => {
             cyc = cyc.wrapping_add(12);
-            in_r_c(z, &mut (*z).c2rust_unnamed_1.c2rust_unnamed.d);
+            in_r_c(z, &mut (*z).c2rust_unnamed_1.c2rust_unnamed.d, io);
         }
         88 => {
             cyc = cyc.wrapping_add(12);
-            in_r_c(z, &mut (*z).c2rust_unnamed_1.c2rust_unnamed.e);
+            in_r_c(z, &mut (*z).c2rust_unnamed_1.c2rust_unnamed.e, io);
         }
         96 => {
             cyc = cyc.wrapping_add(12);
-            in_r_c(z, &mut (*z).c2rust_unnamed_2.c2rust_unnamed.h);
+            in_r_c(z, &mut (*z).c2rust_unnamed_2.c2rust_unnamed.h, io);
         }
         104 => {
             cyc = cyc.wrapping_add(12);
-            in_r_c(z, &mut (*z).c2rust_unnamed_2.c2rust_unnamed.l);
+            in_r_c(z, &mut (*z).c2rust_unnamed_2.c2rust_unnamed.l, io);
         }
         112 => {
             cyc = cyc.wrapping_add(12);
             let mut val: uint8_t = 0;
-            in_r_c(z, &mut val);
+            in_r_c(z, &mut val, io);
         }
         120 => {
             cyc = cyc.wrapping_add(12);
-            in_r_c(z, &mut (*z).c2rust_unnamed.c2rust_unnamed.a);
-            (*z)
-                .mem_ptr = ((*z).c2rust_unnamed_0.bc as i32 + 1 as i32)
-                as uint16_t;
+            in_r_c(z, &mut (*z).c2rust_unnamed.c2rust_unnamed.a, io);
+            (*z).mem_ptr = ((*z).c2rust_unnamed_0.bc as i32 + 1 as i32) as uint16_t;
         }
         162 => {
             cyc = cyc.wrapping_add(16);
-            ini(z);
+            ini(z, io);
         }
         178 => {
             cyc = cyc.wrapping_add(16);
-            ini(z);
+            ini(z, io);
             if (*z).c2rust_unnamed_0.c2rust_unnamed.b as i32 > 0 as i32 {
                 (*z).pc = ((*z).pc as i32 - 2 as i32) as uint16_t;
                 cyc = cyc.wrapping_add(5);
@@ -3912,11 +3214,11 @@ unsafe fn exec_opcode_ed<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 
         }
         170 => {
             cyc = cyc.wrapping_add(16);
-            ind(z);
+            ind(z, io);
         }
         186 => {
             cyc = cyc.wrapping_add(16);
-            ind(z);
+            ind(z, io);
             if (*z).c2rust_unnamed_0.c2rust_unnamed.b as i32 > 0 as i32 {
                 (*z).pc = ((*z).pc as i32 - 2 as i32) as uint16_t;
                 cyc = cyc.wrapping_add(5);
@@ -3925,43 +3227,43 @@ unsafe fn exec_opcode_ed<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 
         }
         121 => {
             cyc = cyc.wrapping_add(12);
-            outc(z, (*z).c2rust_unnamed.c2rust_unnamed.a);
+            outc(z, (*z).c2rust_unnamed.c2rust_unnamed.a, io);
         }
         65 => {
             cyc = cyc.wrapping_add(12);
-            outc(z, (*z).c2rust_unnamed_0.c2rust_unnamed.b);
+            outc(z, (*z).c2rust_unnamed_0.c2rust_unnamed.b, io);
         }
         73 => {
             cyc = cyc.wrapping_add(12);
-            outc(z, (*z).c2rust_unnamed_0.c2rust_unnamed.c);
+            outc(z, (*z).c2rust_unnamed_0.c2rust_unnamed.c, io);
         }
         81 => {
             cyc = cyc.wrapping_add(12);
-            outc(z, (*z).c2rust_unnamed_1.c2rust_unnamed.d);
+            outc(z, (*z).c2rust_unnamed_1.c2rust_unnamed.d, io);
         }
         89 => {
             cyc = cyc.wrapping_add(12);
-            outc(z, (*z).c2rust_unnamed_1.c2rust_unnamed.e);
+            outc(z, (*z).c2rust_unnamed_1.c2rust_unnamed.e, io);
         }
         97 => {
             cyc = cyc.wrapping_add(12);
-            outc(z, (*z).c2rust_unnamed_2.c2rust_unnamed.h);
+            outc(z, (*z).c2rust_unnamed_2.c2rust_unnamed.h, io);
         }
         105 => {
             cyc = cyc.wrapping_add(12);
-            outc(z, (*z).c2rust_unnamed_2.c2rust_unnamed.l);
+            outc(z, (*z).c2rust_unnamed_2.c2rust_unnamed.l, io);
         }
         113 => {
             cyc = cyc.wrapping_add(12);
-            outc(z, 0 as i32 as uint8_t);
+            outc(z, 0 as i32 as uint8_t, io);
         }
         163 => {
             cyc = cyc.wrapping_add(16);
-            outi(z);
+            outi(z, io);
         }
         179 => {
             cyc = cyc.wrapping_add(16);
-            outi(z);
+            outi(z, io);
             if (*z).c2rust_unnamed_0.c2rust_unnamed.b as i32 > 0 as i32 {
                 (*z).pc = ((*z).pc as i32 - 2 as i32) as uint16_t;
                 cyc = cyc.wrapping_add(5);
@@ -3970,11 +3272,11 @@ unsafe fn exec_opcode_ed<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 
         }
         171 => {
             cyc = cyc.wrapping_add(16);
-            outd(z);
+            outd(z, io);
         }
         187 => {
             cyc = cyc.wrapping_add(16);
-            outd(z);
+            outd(z, io);
             if (*z).c2rust_unnamed_0.c2rust_unnamed.b as i32 > 0 as i32 {
                 (*z).pc = ((*z).pc as i32 - 2 as i32) as uint16_t;
                 cyc = cyc.wrapping_add(5);
@@ -4015,58 +3317,55 @@ unsafe fn exec_opcode_ed<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 
         }
         67 => {
             cyc = cyc.wrapping_add(20);
-            let addr: uint16_t = nextw(z);
-            ww(z, addr, (*z).c2rust_unnamed_0.bc);
+            let addr: uint16_t = nextw(z, io);
+            ww(addr, (*z).c2rust_unnamed_0.bc, io);
             (*z).mem_ptr = (addr as i32 + 1 as i32) as uint16_t;
         }
         83 => {
             cyc = cyc.wrapping_add(20);
-            let addr_0: uint16_t = nextw(z);
-            ww(z, addr_0, (*z).c2rust_unnamed_1.de);
+            let addr_0: uint16_t = nextw(z, io);
+            ww(addr_0, (*z).c2rust_unnamed_1.de, io);
             (*z).mem_ptr = (addr_0 as i32 + 1 as i32) as uint16_t;
         }
         99 => {
             cyc = cyc.wrapping_add(20);
-            let addr_1: uint16_t = nextw(z);
-            ww(z, addr_1, (*z).c2rust_unnamed_2.hl);
+            let addr_1: uint16_t = nextw(z, io);
+            ww(addr_1, (*z).c2rust_unnamed_2.hl, io);
             (*z).mem_ptr = (addr_1 as i32 + 1 as i32) as uint16_t;
         }
         115 => {
             cyc = cyc.wrapping_add(20);
-            let addr_2: uint16_t = nextw(z);
-            ww(z, addr_2, (*z).sp);
+            let addr_2: uint16_t = nextw(z, io);
+            ww(addr_2, (*z).sp, io);
             (*z).mem_ptr = (addr_2 as i32 + 1 as i32) as uint16_t;
         }
         75 => {
             cyc = cyc.wrapping_add(20);
-            let addr_3: uint16_t = nextw(z);
-            (*z).c2rust_unnamed_0.bc = rw(z, addr_3);
+            let addr_3: uint16_t = nextw(z, io);
+            (*z).c2rust_unnamed_0.bc = rw(addr_3, io);
             (*z).mem_ptr = (addr_3 as i32 + 1 as i32) as uint16_t;
         }
         91 => {
             cyc = cyc.wrapping_add(20);
-            let addr_4: uint16_t = nextw(z);
-            (*z).c2rust_unnamed_1.de = rw(z, addr_4);
+            let addr_4: uint16_t = nextw(z, io);
+            (*z).c2rust_unnamed_1.de = rw(addr_4, io);
             (*z).mem_ptr = (addr_4 as i32 + 1 as i32) as uint16_t;
         }
         107 => {
             cyc = cyc.wrapping_add(20);
-            let addr_5: uint16_t = nextw(z);
-            (*z).c2rust_unnamed_2.hl = rw(z, addr_5);
+            let addr_5: uint16_t = nextw(z, io);
+            (*z).c2rust_unnamed_2.hl = rw(addr_5, io);
             (*z).mem_ptr = (addr_5 as i32 + 1 as i32) as uint16_t;
         }
         123 => {
             cyc = cyc.wrapping_add(20);
-            let addr_6: uint16_t = nextw(z);
-            (*z).sp = rw(z, addr_6);
+            let addr_6: uint16_t = nextw(z, io);
+            (*z).sp = rw(addr_6, io);
             (*z).mem_ptr = (addr_6 as i32 + 1 as i32) as uint16_t;
         }
         68 | 84 | 100 | 116 | 76 | 92 | 108 | 124 => {
             cyc = cyc.wrapping_add(8);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = subb(
+            (*z).c2rust_unnamed.c2rust_unnamed.a = subb(
                 z,
                 0 as i32 as uint32_t,
                 (*z).c2rust_unnamed.c2rust_unnamed.a as uint32_t,
@@ -4088,54 +3387,38 @@ unsafe fn exec_opcode_ed<T: Z80_io>(z: *mut Z80<T>, mut opcode: uint8_t) -> u32 
         103 => {
             cyc = cyc.wrapping_add(18);
             let mut a: uint8_t = (*z).c2rust_unnamed.c2rust_unnamed.a;
-            let mut val_0: uint8_t = rb(z, (*z).c2rust_unnamed_2.hl);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = (a as i32 & 0xf0 as i32
-                | val_0 as i32 & 0xf as i32) as uint8_t;
+            let mut val_0: uint8_t = rb((*z).c2rust_unnamed_2.hl, io);
+            (*z).c2rust_unnamed.c2rust_unnamed.a =
+                (a as i32 & 0xf0 as i32 | val_0 as i32 & 0xf as i32) as uint8_t;
             wb(
-                z,
                 (*z).c2rust_unnamed_2.hl,
-                (val_0 as i32 >> 4 as i32
-                    | (a as i32) << 4 as i32) as uint8_t,
+                (val_0 as i32 >> 4 as i32 | (a as i32) << 4 as i32) as uint8_t,
+                io,
             );
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .f = (f_szpxy[(*z).c2rust_unnamed.c2rust_unnamed.a as usize]
-                as i32 | flag_val(cf, flag_get(z, cf)) as i32
-                | flag_val(nf, 0 as i32 != 0) as i32
-                | flag_val(hf, 0 as i32 != 0) as i32) as uint8_t;
-            (*z)
-                .mem_ptr = ((*z).c2rust_unnamed_2.hl as i32 + 1 as i32)
-                as uint16_t;
+            (*z).c2rust_unnamed.c2rust_unnamed.f =
+                (f_szpxy[(*z).c2rust_unnamed.c2rust_unnamed.a as usize] as i32
+                    | flag_val(cf, flag_get(z, cf)) as i32
+                    | flag_val(nf, 0 as i32 != 0) as i32
+                    | flag_val(hf, 0 as i32 != 0) as i32) as uint8_t;
+            (*z).mem_ptr = ((*z).c2rust_unnamed_2.hl as i32 + 1 as i32) as uint16_t;
         }
         111 => {
             cyc = cyc.wrapping_add(18);
             let mut a_0: uint8_t = (*z).c2rust_unnamed.c2rust_unnamed.a;
-            let mut val_1: uint8_t = rb(z, (*z).c2rust_unnamed_2.hl);
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .a = (a_0 as i32 & 0xf0 as i32
-                | val_1 as i32 >> 4 as i32) as uint8_t;
+            let mut val_1: uint8_t = rb((*z).c2rust_unnamed_2.hl, io);
+            (*z).c2rust_unnamed.c2rust_unnamed.a =
+                (a_0 as i32 & 0xf0 as i32 | val_1 as i32 >> 4 as i32) as uint8_t;
             wb(
-                z,
                 (*z).c2rust_unnamed_2.hl,
-                ((val_1 as i32) << 4 as i32
-                    | a_0 as i32 & 0xf as i32) as uint8_t,
+                ((val_1 as i32) << 4 as i32 | a_0 as i32 & 0xf as i32) as uint8_t,
+                io,
             );
-            (*z)
-                .c2rust_unnamed
-                .c2rust_unnamed
-                .f = (f_szpxy[(*z).c2rust_unnamed.c2rust_unnamed.a as usize]
-                as i32 | flag_val(cf, flag_get(z, cf)) as i32
-                | flag_val(nf, 0 as i32 != 0) as i32
-                | flag_val(hf, 0 as i32 != 0) as i32) as uint8_t;
-            (*z)
-                .mem_ptr = ((*z).c2rust_unnamed_2.hl as i32 + 1 as i32)
-                as uint16_t;
+            (*z).c2rust_unnamed.c2rust_unnamed.f =
+                (f_szpxy[(*z).c2rust_unnamed.c2rust_unnamed.a as usize] as i32
+                    | flag_val(cf, flag_get(z, cf)) as i32
+                    | flag_val(nf, 0 as i32 != 0) as i32
+                    | flag_val(hf, 0 as i32 != 0) as i32) as uint8_t;
+            (*z).mem_ptr = ((*z).c2rust_unnamed_2.hl as i32 + 1 as i32) as uint16_t;
         }
         _ => {}
     }

@@ -21,4 +21,4 @@ tracing-wasm = "0.2.1"
 typetag = "0.2.7"
 wai-bindgen-rust = "0.2.3"
 wasm-bindgen = "0.2.84"
-z80 = "1.0.2"
+z80 = {path = "z80"}

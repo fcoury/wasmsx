@@ -1,54 +1,41 @@
-use std::{cell::RefCell, fmt, rc::Rc};
+use std::fmt;
 
 use serde::{Deserialize, Serialize};
 use tracing::error;
 use wasm_bindgen::prelude::wasm_bindgen;
-use z80::Z80_io;
+use z80::{Z80_io, Z80};
 
 use super::{ppi::Ppi, sound::AY38910, vdp::TMS9918};
 use crate::{
-    cpu::Cpu,
     slot::{RamSlot, RomSlot, SlotType},
     vdp::DisplayMode,
     Renderer,
 };
 
-#[derive(Clone, Debug)]
 pub struct Bus {
     // I/O Devices
-    pub cpu: Rc<RefCell<Cpu>>,
-    pub vdp: Rc<RefCell<TMS9918>>,
-    pub ppi: Rc<RefCell<Ppi>>,
-    pub psg: Rc<RefCell<AY38910>>,
+    pub cpu: Option<Z80>,
+    pub vdp: TMS9918,
+    pub ppi: Ppi,
+    pub psg: AY38910,
 
     slots: [SlotType; 4],
 }
 
 impl Bus {
     pub fn new(slots: &[SlotType]) -> Self {
-        let bus = Rc::new(RefCell::new(Bus {
+        Bus {
             slots: [
                 slots.get(0).unwrap().clone(),
                 slots.get(1).unwrap().clone(),
                 slots.get(2).unwrap().clone(),
                 slots.get(3).unwrap().clone(),
             ],
-            cpu: Rc::new(RefCell::new(Cpu::new())),
-            vdp: Rc::new(RefCell::new(TMS9918::new())),
-            ppi: Rc::new(RefCell::new(Ppi::new())),
-            psg: Rc::new(RefCell::new(AY38910::new())),
-        }));
-
-        bus.borrow_mut()
-            .cpu
-            .borrow_mut()
-            .set_bus(Rc::downgrade(&bus));
-        bus.borrow_mut()
-            .vdp
-            .borrow_mut()
-            .set_bus(Rc::downgrade(&bus));
-
-        Rc::try_unwrap(bus).unwrap().into_inner()
+            cpu: Some(Z80::new()),
+            vdp: TMS9918::new(),
+            ppi: Ppi::new(),
+            psg: AY38910::new(),
+        }
     }
 
     pub fn mem_size(&self) -> usize {
@@ -60,16 +47,16 @@ impl Bus {
     // }
 
     pub fn reset(&mut self) {
-        self.vdp.borrow_mut().reset();
-        self.psg.borrow_mut().reset();
-        self.ppi.borrow_mut().reset();
+        self.vdp.reset();
+        self.psg.reset();
+        self.ppi.reset();
     }
 
     pub fn input(&mut self, port: u8) -> u8 {
         match port {
-            0x98 | 0x99 => self.vdp.borrow_mut().read(port),
-            0xA0 | 0xA1 => self.psg.borrow_mut().read(port),
-            0xA8 | 0xA9 | 0xAA | 0xAB => self.ppi.borrow_mut().read(port),
+            0x98 | 0x99 => self.vdp.read(port),
+            0xA0 | 0xA1 => self.psg.read(port),
+            0xA8 | 0xA9 | 0xAA | 0xAB => self.ppi.read(port),
             _ => {
                 error!("[BUS] Invalid port {:02X} read", port);
                 0xff
@@ -79,9 +66,9 @@ impl Bus {
 
     pub fn output(&mut self, port: u8, data: u8) {
         match port {
-            0x98 | 0x99 => self.vdp.borrow_mut().write(port, data),
-            0xA0 | 0xA1 => self.psg.borrow_mut().write(port, data),
-            0xA8 | 0xA9 | 0xAA | 0xAB => self.ppi.borrow_mut().write(port, data),
+            0x98 | 0x99 => self.vdp.write(port, data),
+            0xA0 | 0xA1 => self.psg.write(port, data),
+            0xA8 | 0xA9 | 0xAA | 0xAB => self.ppi.write(port, data),
             _ => {
                 error!("[BUS] Invalid port {:02X} write", port);
             }
@@ -111,16 +98,21 @@ impl Bus {
         (high_byte << 8) | low_byte
     }
 
-    pub fn set_irq(&self, irq: bool) {
-        if irq {
-            self.cpu.borrow_mut().set_irq();
+    pub fn set_irq(&mut self, irq: bool) {
+        if let Some(mut cpu) = self.cpu.take() {
+            if irq {
+                cpu.assert_irq(0);
+            } else {
+                cpu.clr_irq();
+            }
+            self.cpu = Some(cpu);
         } else {
-            self.cpu.borrow_mut().clear_irq();
+            panic!("CPU not initialized");
         }
     }
 
     pub fn primary_slot_config(&self) -> u8 {
-        self.ppi.borrow().primary_slot_config
+        self.ppi.primary_slot_config
     }
 
     pub fn translate_address(&self, address: u16) -> (usize, u16) {
@@ -141,8 +133,7 @@ impl Bus {
         for page in 0..4 {
             let start_address = page * 0x4000;
             let end_address = start_address + 0x3FFF;
-            let slot_number =
-                ((self.ppi.borrow().primary_slot_config >> (page * 2)) & 0x03) as usize;
+            let slot_number = ((self.ppi.primary_slot_config >> (page * 2)) & 0x03) as usize;
             let slot_type = self.slots.get(slot_number).unwrap();
 
             println!(
@@ -153,7 +144,7 @@ impl Bus {
     }
 
     pub fn memory_segments(&self) -> Vec<MemorySegment> {
-        let s = self.ppi.borrow().primary_slot_config;
+        let s = self.ppi.primary_slot_config;
         let mut c: Option<MemorySegment> = None;
         let mut rolling_bases = [0; 4];
 
@@ -210,30 +201,57 @@ impl Bus {
     }
 
     pub fn screen_buffer(&self) -> Vec<u8> {
-        let vdp = self.vdp.borrow();
-        let mut renderer = Renderer::new(&vdp);
+        let mut renderer = Renderer::new(&self.vdp);
         renderer.draw();
         renderer.screen_buffer.to_vec()
     }
 
     pub fn vram(&self) -> Vec<u8> {
-        self.vdp.borrow().vram.to_vec()
+        self.vdp.vram.to_vec()
     }
 
     pub fn pc(&self) -> u16 {
-        self.cpu.borrow().pc()
+        if let Some(ref cpu) = self.cpu {
+            cpu.pc
+        } else {
+            panic!("CPU not initialized");
+        }
     }
 
     pub fn halted(&self) -> bool {
-        self.cpu.borrow().halted()
+        if let Some(ref cpu) = self.cpu {
+            cpu.halted
+        } else {
+            panic!("CPU not initialized");
+        }
     }
 
     pub fn step(&mut self) {
-        self.cpu.borrow_mut().step();
+        if let Some(mut cpu) = self.cpu.take() {
+            let mut bus_wrapper = BusWrapper { bus: self };
+            cpu.step(&mut bus_wrapper);
+            self.cpu = Some(cpu);
+        } else {
+            panic!("CPU not initialized");
+        }
     }
 
     pub fn display_mode(&self) -> DisplayMode {
-        self.vdp.borrow().display_mode.clone()
+        self.vdp.display_mode.clone()
+    }
+}
+
+pub struct BusWrapper<'a> {
+    bus: &'a mut Bus,
+}
+
+impl<'a> Z80_io for BusWrapper<'a> {
+    fn read_byte(&self, addr: u16) -> u8 {
+        self.bus.read_byte(addr)
+    }
+
+    fn write_byte(&mut self, addr: u16, data: u8) {
+        self.bus.write_byte(addr, data);
     }
 }
 
