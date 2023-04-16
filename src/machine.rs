@@ -1,11 +1,10 @@
-use std::{cell::RefCell, fmt, rc::Weak};
-
-use z80::Z80_io;
+use std::{cell::RefCell, fmt, rc::Rc};
 
 use crate::{
     bus::Bus,
     slot::{RamSlot, RomSlot, SlotType},
     vdp::DisplayMode,
+    TMS9918,
 };
 
 // #[derive(Derivative, Serialize, Deserialize)]
@@ -19,23 +18,20 @@ pub struct Machine {
 impl Default for Machine {
     fn default() -> Self {
         println!("Initializing MSX...");
-        let bus = Bus::new(&[
+        Self::new(&[
             SlotType::Empty,
             SlotType::Empty,
             SlotType::Empty,
             SlotType::Empty,
-        ]);
-
-        Self {
-            bus,
-            current_scanline: 0,
-        }
+        ])
     }
 }
 
 impl Machine {
     pub fn new(slots: &[SlotType]) -> Self {
-        let bus = Bus::new(slots);
+        let queue = Rc::new(RefCell::new(Vec::new()));
+        let vdp = TMS9918::new(queue.clone());
+        let bus = Bus::new(slots, vdp, queue);
 
         Self {
             bus,
@@ -44,27 +40,33 @@ impl Machine {
     }
 
     pub fn screen_buffer(&self) -> Vec<u8> {
-        self.bus.screen_buffer()
+        // self.bus.borrow().screen_buffer()
+        todo!()
     }
 
     pub fn vram(&self) -> Vec<u8> {
-        self.bus.vram()
+        // self.bus.borrow().vram()
+        todo!()
     }
 
     pub fn load_rom(&mut self, slot: u8, data: &[u8]) {
-        self.bus.load_rom(slot, data);
+        // self.bus.borrow_mut().load_rom(slot, data);
+        todo!()
     }
 
     pub fn load_ram(&mut self, slot: u8) {
-        self.bus.load_ram(slot);
+        // self.bus.borrow_mut().load_ram(slot);
+        todo!()
     }
 
     pub fn load_empty(&mut self, slot: u8) {
-        self.bus.load_empty(slot);
+        // self.bus.borrow_mut().load_empty(slot);
+        todo!()
     }
 
     pub fn print_memory_page_info(&self) {
-        self.bus.print_memory_page_info();
+        // self.bus.borrow().print_memory_page_info();
+        todo!()
     }
 
     pub fn mem_size(&self) -> usize {
@@ -73,32 +75,36 @@ impl Machine {
     }
 
     pub fn ram(&self) -> Vec<u8> {
-        let mut memory = Vec::new();
-        for pc in 0..self.mem_size() {
-            memory.push(self.bus.read_byte(pc as u16));
-        }
-        memory
+        // let mut memory = Vec::new();
+        // for pc in 0..self.mem_size() {
+        //     memory.push(self.bus.borrow_mut().read_byte(pc as u16));
+        // }
+        // memory
+        todo!()
     }
 
     pub fn pc(&self) -> u16 {
-        self.bus.pc()
+        // self.bus.borrow().pc()
+        todo!()
     }
 
     pub fn halted(&self) -> bool {
-        self.bus.halted()
+        // self.bus.borrow().halted()
+        todo!()
     }
 
     pub fn step(&mut self) {
         self.bus.step();
-        self.current_scanline = (self.current_scanline + 1) % 192;
     }
 
     pub fn primary_slot_config(&self) -> u8 {
-        self.bus.primary_slot_config()
+        // self.bus.borrow().primary_slot_config()
+        todo!()
     }
 
     pub fn display_mode(&self) -> DisplayMode {
-        self.bus.display_mode()
+        // self.bus.borrow().display_mode()
+        todo!()
     }
 }
 
@@ -151,55 +157,5 @@ impl fmt::Display for ProgramEntry {
             self.instruction,
             self.dump.as_deref().unwrap_or("")
         )
-    }
-}
-
-pub struct Io {
-    pub bus: Weak<RefCell<Bus>>,
-}
-
-impl Io {
-    pub fn new(bus: Weak<RefCell<Bus>>) -> Self {
-        Io { bus }
-    }
-}
-
-impl Z80_io for Io {
-    fn read_byte(&self, address: u16) -> u8 {
-        if let Some(bus) = self.bus.upgrade() {
-            if address == 0x1452 || address == 0x0d12 || address == 0x0c3c {
-                tracing::info!("[KEYBOARD] Reading from {:04X}", address);
-            }
-            bus.borrow().read_byte(address)
-        } else {
-            panic!("Bus is not available")
-        }
-    }
-
-    fn write_byte(&mut self, address: u16, value: u8) {
-        if let Some(bus) = self.bus.upgrade() {
-            if address == 0x1452 || address == 0x0d12 || address == 0x0c3c {
-                tracing::info!("[KEYBOARD] Writing to {:04X}", address);
-            }
-            bus.borrow_mut().write_byte(address, value)
-        } else {
-            panic!("Bus is not available")
-        }
-    }
-
-    fn port_in(&self, port: u16) -> u8 {
-        if let Some(bus) = self.bus.upgrade() {
-            bus.borrow_mut().input(port as u8)
-        } else {
-            panic!("Bus is not available")
-        }
-    }
-
-    fn port_out(&mut self, port: u16, value: u8) {
-        if let Some(bus) = self.bus.upgrade() {
-            bus.borrow_mut().output(port as u8, value)
-        } else {
-            panic!("Bus is not available")
-        }
     }
 }

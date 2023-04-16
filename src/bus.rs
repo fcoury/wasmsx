@@ -1,9 +1,9 @@
-use std::{cell::RefCell, fmt, rc::Rc};
+use std::{cell::RefCell, fmt, rc::Rc, sync::mpsc::Sender};
 
 use serde::{Deserialize, Serialize};
 use tracing::error;
 use wasm_bindgen::prelude::wasm_bindgen;
-use z80::Z80_io;
+use z80::{Z80_io, Z80};
 
 use super::{ppi::Ppi, sound::AY38910, vdp::TMS9918};
 use crate::{
@@ -13,63 +13,69 @@ use crate::{
     Renderer,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
+pub enum BusMessage {
+    EnableInterrupt,
+    WritePort,
+    CpuStep,
+    ReadByte(u16, Sender<u8>),
+}
+
+#[derive(Debug)]
+pub enum BusMessageReply {
+    NoReply(()),
+    Byte(u8),
+}
+
 pub struct Bus {
+    pub queue: Rc<RefCell<Vec<BusMessage>>>,
+
     // I/O Devices
-    pub cpu: Rc<RefCell<Cpu>>,
-    pub vdp: Rc<RefCell<TMS9918>>,
-    pub ppi: Rc<RefCell<Ppi>>,
-    pub psg: Rc<RefCell<AY38910>>,
+    pub cpu: Rc<RefCell<Z80<Bus>>>,
+    pub vdp: TMS9918,
+    pub ppi: Ppi,
+    pub psg: AY38910,
 
     slots: [SlotType; 4],
 }
 
 impl Bus {
-    pub fn new(slots: &[SlotType]) -> Self {
-        let bus = Rc::new(RefCell::new(Bus {
+    pub fn new(
+        slots: &[SlotType],
+        cpu: Rc<RefCell<Z80<Bus>>>,
+        vdp: TMS9918,
+        queue: Rc<RefCell<Vec<BusMessage>>>,
+    ) -> Self {
+        Bus {
+            queue,
             slots: [
                 slots.get(0).unwrap().clone(),
                 slots.get(1).unwrap().clone(),
                 slots.get(2).unwrap().clone(),
                 slots.get(3).unwrap().clone(),
             ],
-            cpu: Rc::new(RefCell::new(Cpu::new())),
-            vdp: Rc::new(RefCell::new(TMS9918::new())),
-            ppi: Rc::new(RefCell::new(Ppi::new())),
-            psg: Rc::new(RefCell::new(AY38910::new())),
-        }));
-
-        bus.borrow_mut()
-            .cpu
-            .borrow_mut()
-            .set_bus(Rc::downgrade(&bus));
-        bus.borrow_mut()
-            .vdp
-            .borrow_mut()
-            .set_bus(Rc::downgrade(&bus));
-
-        Rc::try_unwrap(bus).unwrap().into_inner()
+            cpu,
+            vdp,
+            ppi: Ppi::new(),
+            psg: AY38910::new(),
+        }
     }
 
     pub fn mem_size(&self) -> usize {
         0x10000
     }
 
-    // pub fn send_message(&self, message: BusMessage) {
-    //     match message {}
-    // }
-
     pub fn reset(&mut self) {
-        self.vdp.borrow_mut().reset();
-        self.psg.borrow_mut().reset();
-        self.ppi.borrow_mut().reset();
+        self.get_vdp().reset();
+        self.get_ppi().reset();
+        self.get_psg().reset();
     }
 
     pub fn input(&mut self, port: u8) -> u8 {
         match port {
-            0x98 | 0x99 => self.vdp.borrow_mut().read(port),
-            0xA0 | 0xA1 => self.psg.borrow_mut().read(port),
-            0xA8 | 0xA9 | 0xAA | 0xAB => self.ppi.borrow_mut().read(port),
+            0x98 | 0x99 => self.vdp.read(port),
+            0xA0 | 0xA1 => self.psg.read(port),
+            0xA8 | 0xA9 | 0xAA | 0xAB => self.ppi.read(port),
             _ => {
                 error!("[BUS] Invalid port {:02X} read", port);
                 0xff
@@ -79,9 +85,9 @@ impl Bus {
 
     pub fn output(&mut self, port: u8, data: u8) {
         match port {
-            0x98 | 0x99 => self.vdp.borrow_mut().write(port, data),
-            0xA0 | 0xA1 => self.psg.borrow_mut().write(port, data),
-            0xA8 | 0xA9 | 0xAA | 0xAB => self.ppi.borrow_mut().write(port, data),
+            0x98 | 0x99 => self.get_vdp().write(port, data),
+            0xA0 | 0xA1 => self.get_psg().write(port, data),
+            0xA8 | 0xA9 | 0xAA | 0xAB => self.get_ppi().write(port, data),
             _ => {
                 error!("[BUS] Invalid port {:02X} write", port);
             }
@@ -111,16 +117,33 @@ impl Bus {
         (high_byte << 8) | low_byte
     }
 
-    pub fn set_irq(&self, irq: bool) {
-        if irq {
-            self.cpu.borrow_mut().set_irq();
-        } else {
-            self.cpu.borrow_mut().clear_irq();
-        }
+    fn get_ppi(&self) -> Ppi {
+        todo!()
+        // self.ppi.expect("[BUS] No PPI set")
+    }
+
+    fn get_vdp(&self) -> TMS9918 {
+        todo!()
+        // self.vdp.expect("[BUS] No VDP set")
+    }
+
+    fn get_psg(&self) -> AY38910 {
+        todo!()
+        // self.psg.expect("[BUS] No PSG set")
+    }
+
+    pub fn set_irq(&mut self, irq: bool) {
+        todo!()
+        // let cpu = self.cpu.as_mut().unwrap();
+        // if irq {
+        //     cpu.set_irq();
+        // } else {
+        //     cpu.clear_irq();
+        // }
     }
 
     pub fn primary_slot_config(&self) -> u8 {
-        self.ppi.borrow().primary_slot_config
+        self.get_ppi().primary_slot_config
     }
 
     pub fn translate_address(&self, address: u16) -> (usize, u16) {
@@ -141,8 +164,7 @@ impl Bus {
         for page in 0..4 {
             let start_address = page * 0x4000;
             let end_address = start_address + 0x3FFF;
-            let slot_number =
-                ((self.ppi.borrow().primary_slot_config >> (page * 2)) & 0x03) as usize;
+            let slot_number = ((self.primary_slot_config() >> (page * 2)) & 0x03) as usize;
             let slot_type = self.slots.get(slot_number).unwrap();
 
             println!(
@@ -153,7 +175,7 @@ impl Bus {
     }
 
     pub fn memory_segments(&self) -> Vec<MemorySegment> {
-        let s = self.ppi.borrow().primary_slot_config;
+        let s = self.primary_slot_config();
         let mut c: Option<MemorySegment> = None;
         let mut rolling_bases = [0; 4];
 
@@ -210,30 +232,49 @@ impl Bus {
     }
 
     pub fn screen_buffer(&self) -> Vec<u8> {
-        let vdp = self.vdp.borrow();
+        let vdp = self.get_vdp();
         let mut renderer = Renderer::new(&vdp);
         renderer.draw();
         renderer.screen_buffer.to_vec()
     }
 
     pub fn vram(&self) -> Vec<u8> {
-        self.vdp.borrow().vram.to_vec()
+        self.get_vdp().vram.to_vec()
     }
 
     pub fn pc(&self) -> u16 {
-        self.cpu.borrow().pc()
+        todo!()
+        // self.cpu.as_ref().unwrap().pc()
     }
 
     pub fn halted(&self) -> bool {
-        self.cpu.borrow().halted()
+        todo!()
+        // self.cpu.as_ref().unwrap().halted()
     }
 
     pub fn step(&mut self) {
-        self.cpu.borrow_mut().step();
+        println!("Bus - step");
+        self.queue.borrow_mut().push(BusMessage::CpuStep);
+
+        loop {
+            let Some(message) = self.queue.borrow_mut().pop() else {
+                break;
+            };
+
+            println!("Bus - step - message: {:?}", message);
+
+            match message {
+                BusMessage::EnableInterrupt => self.cpu.set_irq(),
+                BusMessage::ReadByte(address, tx) => tx.send(self.read_byte(address)).unwrap(),
+                BusMessage::CpuStep => self.cpu.step(),
+                BusMessage::WritePort => unimplemented!("Message not implemented"),
+            };
+        }
     }
 
     pub fn display_mode(&self) -> DisplayMode {
-        self.vdp.borrow().display_mode.clone()
+        todo!()
+        // self.get_vdp().display_mode
     }
 }
 
@@ -244,6 +285,14 @@ impl Z80_io for Bus {
 
     fn write_byte(&mut self, addr: u16, data: u8) {
         self.write_byte(addr, data);
+    }
+
+    fn port_in(&self, addr: u16) -> u8 {
+        self.vdp.read(addr as u8)
+    }
+
+    fn port_out(&mut self, addr: u16, data: u8) {
+        self.vdp.write(addr as u8, data);
     }
 }
 

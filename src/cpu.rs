@@ -1,75 +1,53 @@
-use std::{cell::RefCell, fmt, rc::Weak};
+use std::{cell::RefCell, fmt, rc::Rc};
 
 use z80::Z80;
 
-use crate::{bus::Bus, machine::Io};
+use crate::{bus::BusMessage, io::Io};
 
-#[derive(Default)]
 pub struct Cpu {
-    cpu: Option<Z80<Io>>,
+    cpu: Z80<Io>,
 }
 
 impl Cpu {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn set_bus(&mut self, bus: Weak<RefCell<Bus>>) {
-        self.cpu = Some(Z80::new(Io::new(bus)));
+    pub fn new(queue: Rc<RefCell<Vec<BusMessage>>>) -> Self {
+        let cpu = Z80::new(Io::new(queue));
+        Self { cpu }
     }
 
     pub fn step(&mut self) {
-        if let Some(mut cpu) = self.cpu.take() {
-            cpu.step();
-            self.cpu = Some(cpu);
-        } else {
-            panic!("CPU instance not set");
-        }
+        println!("Cpu step");
+        self.cpu.step();
     }
 
     pub fn pc(&self) -> u16 {
-        self.cpu.as_ref().expect("CPU instance").pc
+        self.cpu.pc
     }
 
     pub fn halted(&self) -> bool {
-        self.cpu.as_ref().expect("CPU instance").halted
+        self.cpu.halted
     }
 
     pub fn set_irq(&mut self) {
-        if let Some(mut cpu) = self.cpu.take() {
-            cpu.assert_irq(0);
-            self.cpu = Some(cpu);
-        } else {
-            panic!("CPU instance not set");
-        }
+        self.cpu.assert_irq(0);
     }
 
     pub fn clear_irq(&mut self) {
-        if let Some(mut cpu) = self.cpu.take() {
-            cpu.clr_irq();
-            self.cpu = Some(cpu);
-        } else {
-            panic!("CPU instance not set");
-        }
+        self.cpu.clr_irq();
     }
 }
 
 impl fmt::Debug for Cpu {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(cpu) = self.cpu.as_ref() {
-            f.debug_struct("Cpu")
-                .field("pc", &cpu.pc)
-                .field("sp", &cpu.sp)
-                .field("ix", &cpu.ix)
-                .field("iy", &cpu.iy)
-                .field("i", &cpu.i)
-                .field("r", &cpu.r)
-                .field("iff1", &cpu.iff1)
-                .field("iff2", &cpu.iff2)
-                .field("halted", &cpu.halted)
-                .finish()
-        } else {
-            f.debug_struct("Cpu").finish()
-        }
+        f.debug_struct("Cpu")
+            .field("pc", &self.cpu.pc)
+            .field("sp", &self.cpu.sp)
+            .field("ix", &self.cpu.ix)
+            .field("iy", &self.cpu.iy)
+            .field("i", &self.cpu.i)
+            .field("r", &self.cpu.r)
+            .field("iff1", &self.cpu.iff1)
+            .field("iff2", &self.cpu.iff2)
+            .field("halted", &self.cpu.halted)
+            .finish()
     }
 }

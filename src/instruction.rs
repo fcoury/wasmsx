@@ -3,7 +3,7 @@ use std::fmt;
 use tracing::error;
 use z80::{Z80_io, Z80};
 
-use crate::machine::Io;
+use crate::io::Io;
 
 pub struct Instruction<'a> {
     pub opcode: u8,

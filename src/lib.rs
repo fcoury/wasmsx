@@ -2,6 +2,7 @@ pub mod bus;
 pub mod cpu;
 pub mod instruction;
 pub mod internal_state;
+pub mod io;
 pub mod machine;
 pub mod ppi;
 pub mod renderer;
@@ -84,5 +85,16 @@ impl JsMachine {
     #[wasm_bindgen(getter=displayMode)]
     pub fn display_mode(&self) -> String {
         format!("{:?}", self.0.display_mode())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_machine() {
+        let mut machine = Machine::default();
+        machine.step();
     }
 }
