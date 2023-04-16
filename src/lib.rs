@@ -85,3 +85,14 @@ impl JsMachine {
         format!("{:?}", self.0.display_mode())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_machine() {
+        let mut machine = Machine::default();
+        machine.step();
+    }
+}

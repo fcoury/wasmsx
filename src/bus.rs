@@ -42,10 +42,6 @@ impl Bus {
         0x10000
     }
 
-    // pub fn send_message(&self, message: BusMessage) {
-    //     match message {}
-    // }
-
     pub fn reset(&mut self) {
         self.vdp.reset();
         self.psg.reset();
@@ -227,13 +223,13 @@ impl Bus {
     }
 
     pub fn step(&mut self) {
-        if let Some(mut cpu) = self.cpu.take() {
-            let mut bus_wrapper = BusWrapper { bus: self };
-            cpu.step(&mut bus_wrapper);
-            self.cpu = Some(cpu);
-        } else {
+        let Some(mut cpu) = self.cpu.take() else {
             panic!("CPU not initialized");
-        }
+        };
+
+        let mut bus_wrapper = BusWrapper { bus: self };
+        cpu.step(&mut bus_wrapper);
+        self.cpu = Some(cpu);
     }
 
     pub fn display_mode(&self) -> DisplayMode {
@@ -284,140 +280,138 @@ impl fmt::Display for MemorySegment {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use crate::slot::{RamSlot, RomSlot};
+#[cfg(test)]
+mod tests {
+    use crate::slot::{RamSlot, RomSlot};
 
-//     use super::*;
+    use super::*;
 
-//     #[test]
-//     fn test_slot_definition() {
-//         let bus = Bus::new(&[
-//             SlotType::Rom(RomSlot::new(&[0; 0x8000], 0x0000, 0x8000)),
-//             SlotType::Empty,
-//             SlotType::Empty,
-//             SlotType::Ram(RamSlot::new(0x0000, 0x10000)),
-//         ]);
-//         let mut bus = bus.borrow_mut();
+    #[test]
+    fn test_slot_definition() {
+        let mut bus = Bus::new(&[
+            SlotType::Rom(RomSlot::new(&[0; 0x8000], 0x0000, 0x8000)),
+            SlotType::Empty,
+            SlotType::Empty,
+            SlotType::Ram(RamSlot::new(0x0000, 0x10000)),
+        ]);
 
-//         bus.ppi.primary_slot_config = 0b00_11_00_00;
-//         let segments = bus.memory_segments();
-//         assert_eq!(segments.len(), 3);
-//         let segment = segments.get(0).unwrap();
-//         assert_eq!(segment.slot, 0);
-//         assert_eq!(segment.start, 0x0000);
-//         assert_eq!(segment.end, 0x7FFF);
-//         let segment = segments.get(1).unwrap();
-//         assert_eq!(segment.slot, 3);
-//         assert_eq!(segment.start, 0x8000);
-//         assert_eq!(segment.end, 0xBFFF);
-//         let segment = segments.get(2).unwrap();
-//         assert_eq!(segment.slot, 0);
-//         assert_eq!(segment.start, 0xC000);
-//         assert_eq!(segment.end, 0xFFFF);
-//         assert_eq!(segments.get(3), None);
+        bus.ppi.primary_slot_config = 0b00_11_00_00;
+        let segments = bus.memory_segments();
+        assert_eq!(segments.len(), 3);
+        let segment = segments.get(0).unwrap();
+        assert_eq!(segment.slot, 0);
+        assert_eq!(segment.start, 0x0000);
+        assert_eq!(segment.end, 0x7FFF);
+        let segment = segments.get(1).unwrap();
+        assert_eq!(segment.slot, 3);
+        assert_eq!(segment.start, 0x8000);
+        assert_eq!(segment.end, 0xBFFF);
+        let segment = segments.get(2).unwrap();
+        assert_eq!(segment.slot, 0);
+        assert_eq!(segment.start, 0xC000);
+        assert_eq!(segment.end, 0xFFFF);
+        assert_eq!(segments.get(3), None);
 
-//         bus.ppi.primary_slot_config = 0b0000000;
-//         let segments = bus.memory_segments();
-//         assert_eq!(segments.len(), 1);
-//         let segment = segments.get(0).unwrap();
-//         assert_eq!(segment.slot, 0);
-//         assert_eq!(segment.start, 0x0000);
-//         assert_eq!(segment.end, 0xFFFF);
-//         assert_eq!(segments.get(1), None);
-//         assert_eq!(segments.get(2), None);
-//         assert_eq!(segments.get(3), None);
+        bus.ppi.primary_slot_config = 0b0000000;
+        let segments = bus.memory_segments();
+        assert_eq!(segments.len(), 1);
+        let segment = segments.get(0).unwrap();
+        assert_eq!(segment.slot, 0);
+        assert_eq!(segment.start, 0x0000);
+        assert_eq!(segment.end, 0xFFFF);
+        assert_eq!(segments.get(1), None);
+        assert_eq!(segments.get(2), None);
+        assert_eq!(segments.get(3), None);
 
-//         bus.ppi.primary_slot_config = 0b11_11_00_00;
-//         let segments = bus.memory_segments();
-//         assert_eq!(segments.len(), 2);
-//         let segment = segments.get(0).unwrap();
-//         assert_eq!(segment.slot, 0);
-//         assert_eq!(segment.start, 0x0000);
-//         assert_eq!(segment.end, 0x7FFF);
-//         let segment = segments.get(1).unwrap();
-//         assert_eq!(segment.slot, 3);
-//         assert_eq!(segment.start, 0x8000);
-//         assert_eq!(segment.end, 0xFFFF);
-//         assert_eq!(segments.get(2), None);
-//         assert_eq!(segments.get(3), None);
+        bus.ppi.primary_slot_config = 0b11_11_00_00;
+        let segments = bus.memory_segments();
+        assert_eq!(segments.len(), 2);
+        let segment = segments.get(0).unwrap();
+        assert_eq!(segment.slot, 0);
+        assert_eq!(segment.start, 0x0000);
+        assert_eq!(segment.end, 0x7FFF);
+        let segment = segments.get(1).unwrap();
+        assert_eq!(segment.slot, 3);
+        assert_eq!(segment.start, 0x8000);
+        assert_eq!(segment.end, 0xFFFF);
+        assert_eq!(segments.get(2), None);
+        assert_eq!(segments.get(3), None);
 
-//         bus.ppi.primary_slot_config = 0b00_00_11_01;
-//         let segments = bus.memory_segments();
-//         assert_eq!(segments.len(), 3);
-//         let segment = segments.get(0).unwrap();
-//         assert_eq!(segment.slot, 1);
-//         assert_eq!(segment.start, 0x0000);
-//         assert_eq!(segment.end, 0x3FFF);
-//         let segment = segments.get(1).unwrap();
-//         assert_eq!(segment.slot, 3);
-//         assert_eq!(segment.start, 0x4000);
-//         assert_eq!(segment.end, 0x7FFF);
-//         let segment = segments.get(2).unwrap();
-//         assert_eq!(segment.slot, 0);
-//         assert_eq!(segment.start, 0x8000);
-//         assert_eq!(segment.end, 0xFFFF);
-//         assert_eq!(segments.get(3), None);
+        bus.ppi.primary_slot_config = 0b00_00_11_01;
+        let segments = bus.memory_segments();
+        assert_eq!(segments.len(), 3);
+        let segment = segments.get(0).unwrap();
+        assert_eq!(segment.slot, 1);
+        assert_eq!(segment.start, 0x0000);
+        assert_eq!(segment.end, 0x3FFF);
+        let segment = segments.get(1).unwrap();
+        assert_eq!(segment.slot, 3);
+        assert_eq!(segment.start, 0x4000);
+        assert_eq!(segment.end, 0x7FFF);
+        let segment = segments.get(2).unwrap();
+        assert_eq!(segment.slot, 0);
+        assert_eq!(segment.start, 0x8000);
+        assert_eq!(segment.end, 0xFFFF);
+        assert_eq!(segments.get(3), None);
 
-//         bus.ppi.primary_slot_config = 0b01_11_10_11;
-//         let segments = bus.memory_segments();
-//         assert_eq!(segments.len(), 4);
-//         let segment = segments.get(0).unwrap();
-//         assert_eq!(segment.slot, 3);
-//         assert_eq!(segment.start, 0x0000);
-//         assert_eq!(segment.end, 0x3FFF);
-//         let segment = segments.get(1).unwrap();
-//         assert_eq!(segment.slot, 2);
-//         assert_eq!(segment.start, 0x4000);
-//         assert_eq!(segment.end, 0x7FFF);
-//         let segment = segments.get(2).unwrap();
-//         assert_eq!(segment.slot, 3);
-//         assert_eq!(segment.start, 0x8000);
-//         assert_eq!(segment.end, 0xBFFF);
-//         let segment = segments.get(3).unwrap();
-//         assert_eq!(segment.slot, 1);
-//         assert_eq!(segment.start, 0xC000);
-//         assert_eq!(segment.end, 0xFFFF);
-//     }
+        bus.ppi.primary_slot_config = 0b01_11_10_11;
+        let segments = bus.memory_segments();
+        assert_eq!(segments.len(), 4);
+        let segment = segments.get(0).unwrap();
+        assert_eq!(segment.slot, 3);
+        assert_eq!(segment.start, 0x0000);
+        assert_eq!(segment.end, 0x3FFF);
+        let segment = segments.get(1).unwrap();
+        assert_eq!(segment.slot, 2);
+        assert_eq!(segment.start, 0x4000);
+        assert_eq!(segment.end, 0x7FFF);
+        let segment = segments.get(2).unwrap();
+        assert_eq!(segment.slot, 3);
+        assert_eq!(segment.start, 0x8000);
+        assert_eq!(segment.end, 0xBFFF);
+        let segment = segments.get(3).unwrap();
+        assert_eq!(segment.slot, 1);
+        assert_eq!(segment.start, 0xC000);
+        assert_eq!(segment.end, 0xFFFF);
+    }
 
-//     #[test]
-//     fn test_address_translation() {
-//         let bus = Bus::new(&[
-//             SlotType::Rom(RomSlot::new(&[0; 0x8000], 0x0000, 0x8000)),
-//             SlotType::Empty,
-//             SlotType::Empty,
-//             SlotType::Ram(RamSlot::new(0x0000, 0xFFFF)),
-//         ]);
-//         let mut bus = bus.borrow_mut();
+    #[test]
+    fn test_address_translation() {
+        let mut bus = Bus::new(&[
+            SlotType::Rom(RomSlot::new(&[0; 0x8000], 0x0000, 0x8000)),
+            SlotType::Empty,
+            SlotType::Empty,
+            SlotType::Ram(RamSlot::new(0x0000, 0xFFFF)),
+        ]);
 
-//         bus.ppi.primary_slot_config = 0b00_11_00_00;
-//         assert_eq!(bus.translate_address(0x0000), (0, 0x0000));
-//         assert_eq!(bus.translate_address(0x4000), (0, 0x4000));
-//         assert_eq!(bus.translate_address(0x8000), (3, 0x0000));
-//         assert_eq!(bus.translate_address(0xC000), (0, 0x8000));
+        bus.ppi.primary_slot_config = 0b00_11_00_00;
+        assert_eq!(bus.translate_address(0x0000), (0, 0x0000));
+        assert_eq!(bus.translate_address(0x4000), (0, 0x4000));
+        assert_eq!(bus.translate_address(0x8000), (3, 0x8000));
+        assert_eq!(bus.translate_address(0xC000), (0, 0xC000));
 
-//         bus.ppi.primary_slot_config = 0b00_00_00_00;
-//         assert_eq!(bus.translate_address(0x0FFF), (0, 0x0FFF));
-//         assert_eq!(bus.translate_address(0x4FFF), (0, 0x4FFF));
-//         assert_eq!(bus.translate_address(0x8FFF), (0, 0x8FFF));
-//         assert_eq!(bus.translate_address(0xFFFF), (0, 0xFFFF));
+        bus.ppi.primary_slot_config = 0b00_00_00_00;
+        assert_eq!(bus.translate_address(0x0FFF), (0, 0x0FFF));
+        assert_eq!(bus.translate_address(0x4FFF), (0, 0x4FFF));
+        assert_eq!(bus.translate_address(0x8FFF), (0, 0x8FFF));
+        assert_eq!(bus.translate_address(0xFFFF), (0, 0xFFFF));
 
-//         bus.ppi.primary_slot_config = 0b11_11_00_00;
-//         assert_eq!(bus.translate_address(0x0FFF), (0, 0x0FFF));
-//         assert_eq!(bus.translate_address(0x4FFF), (0, 0x4FFF));
-//         assert_eq!(bus.translate_address(0x8FFF), (3, 0x0FFF));
-//         assert_eq!(bus.translate_address(0xCFFF), (3, 0x4FFF));
+        bus.ppi.primary_slot_config = 0b11_11_00_00;
+        assert_eq!(bus.translate_address(0x0FFF), (0, 0x0FFF));
+        assert_eq!(bus.translate_address(0x4FFF), (0, 0x4FFF));
+        assert_eq!(bus.translate_address(0x8FFF), (3, 0x8FFF));
+        assert_eq!(bus.translate_address(0xCFFF), (3, 0xCFFF));
 
-//         bus.ppi.primary_slot_config = 0b11_11_01_00;
-//         assert_eq!(bus.translate_address(0x0FFF), (0, 0x0FFF));
-//         assert_eq!(bus.translate_address(0x4FFF), (1, 0x0FFF));
-//         assert_eq!(bus.translate_address(0x8FFF), (3, 0x0FFF));
-//         assert_eq!(bus.translate_address(0xFFFF), (3, 0x7FFF));
+        bus.ppi.primary_slot_config = 0b11_11_01_00;
+        assert_eq!(bus.translate_address(0x0FFF), (0, 0x0FFF));
+        assert_eq!(bus.translate_address(0x4FFF), (1, 0x4FFF));
+        assert_eq!(bus.translate_address(0x8FFF), (3, 0x8FFF));
+        assert_eq!(bus.translate_address(0xFFFF), (3, 0xFFFF));
 
-//         bus.ppi.primary_slot_config = 0b11_11_01_10;
-//         assert_eq!(bus.translate_address(0x0FFF), (2, 0x0FFF));
-//         assert_eq!(bus.translate_address(0x4FFF), (1, 0x0FFF));
-//         assert_eq!(bus.translate_address(0x8FFF), (3, 0x0FFF));
-//         assert_eq!(bus.translate_address(0xFFFF), (3, 0x7FFF));
-//     }
-// }
+        bus.ppi.primary_slot_config = 0b11_11_01_10;
+        assert_eq!(bus.translate_address(0x0FFF), (2, 0x0FFF));
+        assert_eq!(bus.translate_address(0x4FFF), (1, 0x4FFF));
+        assert_eq!(bus.translate_address(0x8FFF), (3, 0x8FFF));
+        assert_eq!(bus.translate_address(0xFFFF), (3, 0xFFFF));
+    }
+}
