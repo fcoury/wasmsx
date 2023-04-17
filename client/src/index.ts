@@ -224,7 +224,7 @@ function onLoad() {
 }
 
 function main() {
-  const machine = new Machine(ROMS.hotbit);
+  const machine = new Machine(ROMS.expert);
   const emulator = new Emulator(machine);
   const renderer = new Renderer({ width: 256, height: 192 });
   const app = new App(renderer, emulator);
