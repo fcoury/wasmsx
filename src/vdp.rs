@@ -68,7 +68,7 @@ impl TMS9918 {
             frame: 0,
             line: 0,
             vblank: false,
-            display_mode: DisplayMode::Text1,
+            display_mode: DisplayMode::Graphic1,
 
             f: 0,
             fh: 0,
@@ -112,7 +112,7 @@ impl TMS9918 {
         self.frame = 0;
         self.line = 0;
         self.vblank = false;
-        self.display_mode = DisplayMode::Text1;
+        self.display_mode = DisplayMode::Graphic1;
         self.f = 0;
         self.fh = 0;
         self.sprites_collided = false;
@@ -291,7 +291,7 @@ impl TMS9918 {
         }
     }
 
-    fn update_mode(&mut self) {
+    fn set_display_mode(&mut self) {
         // Get the Mx bits from registers R#0 and R#0 - M3 is in R#1, M1 and M2 are in R#1
         // let mx_bits = ((self.registers[0] & 0x0E) >> 1) | ((self.registers[1] & 0x18) << 2);
 
@@ -359,7 +359,7 @@ impl TMS9918 {
                         "[VDP] Updating mode... | Reg: {} | Value: 0x{:02X}",
                         reg, value
                     );
-                    self.update_mode();
+                    self.set_display_mode();
                 }
             }
             1 => {
@@ -390,7 +390,7 @@ impl TMS9918 {
                         "[VDP] 1 - 0x18 - Update mode | Reg: {} | Value: 0x{:02X}",
                         reg, value
                     );
-                    self.update_mode();
+                    self.set_display_mode();
                 }
                 if modified & 0x04 != 0 {
                     //CDR  (Undocumented, changes reg 13 timing to lines instead of frames)
