@@ -77,12 +77,25 @@ impl JsMachine {
 
 #[cfg(test)]
 mod tests {
+    use tracing_subscriber::fmt;
+
     use crate::slot::{RamSlot, RomSlot, SlotType};
 
     use super::*;
 
     #[test]
     fn machine_test() {
+        // let filter = EnvFilter::from_default_env();
+        let fmt_subscriber = fmt::Subscriber::builder()
+            // .with_env_filter(filter)
+            .with_max_level(tracing::Level::DEBUG)
+            .with_target(false)
+            .with_thread_ids(true)
+            .with_thread_names(true)
+            .finish();
+        tracing::subscriber::set_global_default(fmt_subscriber)
+            .expect("Unable to set global tracing subscriber");
+
         let mut machine = Machine::new(&[
             SlotType::Rom(RomSlot::new(&[0; 0x8000], 0x0000, 0x8000)),
             SlotType::Empty,
@@ -91,9 +104,9 @@ mod tests {
         ]);
         // read the binary file roms/hotbit.rom
         let rom = std::fs::read("roms/hotbit.rom").unwrap();
-        machine.load_rom(0, &rom);
+        machine.load_rom(0, &rom); /*  */
         loop {
-            machine.step();
+            machine.step_for(10000);
             if machine.halted() {
                 break;
             }

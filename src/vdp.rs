@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
 use serde::{Deserialize, Serialize};
 use tracing::{error, info};
@@ -9,7 +9,7 @@ use crate::bus::Message;
 
 #[derive(Clone)]
 pub struct TMS9918 {
-    pub queue: Rc<RefCell<Vec<Message>>>,
+    pub queue: Rc<RefCell<VecDeque<Message>>>,
 
     // #[serde(with = "BigArray")]
     pub vram: [u8; 0x4000],
@@ -48,7 +48,7 @@ pub struct TMS9918 {
 }
 
 impl TMS9918 {
-    pub fn new(queue: Rc<RefCell<Vec<Message>>>) -> Self {
+    pub fn new(queue: Rc<RefCell<VecDeque<Message>>>) -> Self {
         Self {
             queue,
             vram: [0; 0x4000],
@@ -281,10 +281,13 @@ impl TMS9918 {
         {
             // self.irq = true;
             tracing::info!("IRQ ON");
-            self.queue.borrow_mut().push(Message::EnableInterrupts)
+            self.queue.borrow_mut().push_back(Message::EnableInterrupts)
         } else {
-            tracing::info!("IRQ OFF");
-            self.queue.borrow_mut().push(Message::DisableInterrupts)
+            tracing::info!("IRQ OFF: {:?}", self.queue.borrow());
+            self.queue
+                .borrow_mut()
+                .push_back(Message::DisableInterrupts);
+            tracing::info!("IRQ OFF: {:?}", self.queue.borrow());
         }
     }
 

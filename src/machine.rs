@@ -1,4 +1,4 @@
-use std::{cell::RefCell, fmt, rc::Rc};
+use std::{cell::RefCell, collections::VecDeque, fmt, rc::Rc};
 
 use z80::{Z80_io, Z80};
 
@@ -12,13 +12,13 @@ use crate::{
 pub struct Machine {
     pub bus: Rc<RefCell<Bus>>,
     pub cpu: Z80<Io>,
-    pub queue: Rc<RefCell<Vec<Message>>>,
+    pub queue: Rc<RefCell<VecDeque<Message>>>,
     pub current_scanline: u16,
 }
 
 impl Machine {
     pub fn new(slots: &[SlotType]) -> Self {
-        let queue = Rc::new(RefCell::new(Vec::new()));
+        let queue = Rc::new(RefCell::new(VecDeque::new()));
         let bus = Rc::new(RefCell::new(Bus::new(slots, queue.clone())));
         let io = Io::new(bus.clone());
         let cpu = Z80::new(io);
@@ -94,10 +94,11 @@ impl Machine {
     }
 
     pub fn step_for(&mut self, n: usize) {
-        self.queue.borrow_mut().push(Message::CpuStep);
+        self.queue.borrow_mut().push_back(Message::CpuStep);
 
+        let mut steps = 0;
         loop {
-            let Some(message) = self.queue.borrow_mut().pop() else {
+            let Some(message) = self.queue.borrow_mut().pop_front() else {
                 break;
             };
 
@@ -107,15 +108,26 @@ impl Machine {
                     self.cpu.assert_irq(0);
                 }
                 Message::DisableInterrupts => {
-                    tracing::info!("Disabling interrupts");
+                    tracing::info!("Disabling interrupts: {} {}", steps, n);
                     self.cpu.clr_irq();
                 }
                 Message::CpuStep => {
-                    for _ in 0..n {
-                        self.cpu.step();
-                    }
+                    self.cpu.step();
                 }
             };
+
+            if steps < n {
+                self.queue.borrow_mut().push_back(Message::CpuStep);
+                steps += 1;
+
+                if !matches!(message, Message::CpuStep) {
+                    tracing::info!(
+                        "Processed message: {:?} of {}",
+                        message,
+                        self.queue.borrow().len()
+                    );
+                }
+            }
         }
     }
 
@@ -131,7 +143,7 @@ impl Machine {
 impl Default for Machine {
     fn default() -> Self {
         println!("Initializing MSX...");
-        let queue = Rc::new(RefCell::new(Vec::new()));
+        let queue = Rc::new(RefCell::new(VecDeque::new()));
         let bus = Rc::new(RefCell::new(Bus::new(
             &[
                 SlotType::Empty,

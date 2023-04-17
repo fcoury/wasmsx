@@ -1,4 +1,4 @@
-use std::{cell::RefCell, fmt, rc::Rc};
+use std::{cell::RefCell, collections::VecDeque, fmt, rc::Rc};
 
 use serde::{Deserialize, Serialize};
 use tracing::error;
@@ -18,7 +18,7 @@ pub struct Bus {
 }
 
 impl Bus {
-    pub fn new(slots: &[SlotType], queue: Rc<RefCell<Vec<Message>>>) -> Self {
+    pub fn new(slots: &[SlotType], queue: Rc<RefCell<VecDeque<Message>>>) -> Self {
         Self {
             vdp: TMS9918::new(queue),
             psg: AY38910::new(),
