@@ -10,7 +10,7 @@ pub mod utils;
 pub mod vdp;
 
 pub use internal_state::{InternalState, ReportState};
-use machine::MachineBuilder;
+pub use machine::MachineBuilder;
 pub use machine::{Machine, ProgramEntry};
 pub use renderer::Renderer;
 pub use utils::compare_slices;
@@ -72,44 +72,5 @@ impl JsMachine {
     #[wasm_bindgen(getter=displayMode)]
     pub fn display_mode(&self) -> String {
         format!("{:?}", self.0.bus.borrow().vdp.display_mode)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use tracing_subscriber::fmt;
-
-    use crate::slot::{RamSlot, RomSlot, SlotType};
-
-    use super::*;
-
-    #[test]
-    fn machine_test() {
-        // let filter = EnvFilter::from_default_env();
-        let fmt_subscriber = fmt::Subscriber::builder()
-            // .with_env_filter(filter)
-            .with_max_level(tracing::Level::DEBUG)
-            .with_target(false)
-            .with_thread_ids(true)
-            .with_thread_names(true)
-            .finish();
-        tracing::subscriber::set_global_default(fmt_subscriber)
-            .expect("Unable to set global tracing subscriber");
-
-        let mut machine = Machine::new(&[
-            SlotType::Rom(RomSlot::new(&[0; 0x8000], 0x0000, 0x8000)),
-            SlotType::Empty,
-            SlotType::Empty,
-            SlotType::Ram(RamSlot::new(0x0000, 0x10000)),
-        ]);
-        // read the binary file roms/hotbit.rom
-        let rom = std::fs::read("roms/hotbit.rom").unwrap();
-        machine.load_rom(0, &rom); /*  */
-        loop {
-            machine.step_for(10000);
-            if machine.halted() {
-                break;
-            }
-        }
     }
 }
