@@ -8,25 +8,6 @@ use z80::Z80_io;
 use super::{ppi::Ppi, sound::AY38910, vdp::TMS9918};
 use crate::slot::{RamSlot, RomSlot, SlotType};
 
-#[wasm_bindgen]
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, Eq, PartialEq)]
-pub struct MemorySegment {
-    base: u16,
-    start: u16,
-    end: u16,
-    slot: u8,
-}
-
-impl fmt::Display for MemorySegment {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "0x{:04X} - 0x{:04X} - base: 0x{:04X} - (slot {})",
-            self.start, self.end, self.base, self.slot
-        )
-    }
-}
-
 pub struct Bus {
     // I/O Devices
     pub vdp: TMS9918,
@@ -215,6 +196,25 @@ impl Z80_io for Bus {
 
     fn write_byte(&mut self, addr: u16, data: u8) {
         self.write_byte(addr, data);
+    }
+}
+
+#[wasm_bindgen]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, Eq, PartialEq)]
+pub struct MemorySegment {
+    base: u16,
+    start: u16,
+    end: u16,
+    slot: u8,
+}
+
+impl fmt::Display for MemorySegment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "0x{:04X} - 0x{:04X} - base: 0x{:04X} - (slot {})",
+            self.start, self.end, self.base, self.slot
+        )
     }
 }
 
