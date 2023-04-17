@@ -2,7 +2,6 @@ pub mod bus;
 pub mod instruction;
 pub mod internal_state;
 pub mod machine;
-pub mod memory;
 pub mod ppi;
 pub mod renderer;
 pub mod slot;
@@ -65,7 +64,7 @@ impl JsMachine {
     }
 
     pub fn screen(&self) -> Vec<u8> {
-        let bus = self.0.cpu.io.bus.borrow();
+        let bus = self.0.bus.borrow();
         let mut renderer = Renderer::new(&bus.vdp);
         renderer.draw();
         renderer.screen_buffer.to_vec()
@@ -73,19 +72,37 @@ impl JsMachine {
 
     #[wasm_bindgen(getter)]
     pub fn vram(&self) -> Vec<u8> {
-        let bus = self.0.cpu.io.bus.borrow();
-        bus.vdp.vram.to_vec()
-    }
-
-    #[wasm_bindgen(getter)]
-    pub fn text(&self) -> String {
-        let bus = self.0.cpu.io.bus.borrow();
-        let mut renderer = Renderer::new(&bus.vdp);
-        renderer.as_text()
+        self.0.bus.borrow().vdp.vram.to_vec()
     }
 
     #[wasm_bindgen(getter=displayMode)]
     pub fn display_mode(&self) -> String {
-        format!("{:?}", self.0.cpu.io.bus.borrow().vdp.display_mode)
+        format!("{:?}", self.0.bus.borrow().vdp.display_mode)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::slot::{RamSlot, RomSlot, SlotType};
+
+    use super::*;
+
+    #[test]
+    fn machine_test() {
+        let mut machine = Machine::new(&[
+            SlotType::Rom(RomSlot::new(&[0; 0x8000], 0x0000, 0x8000)),
+            SlotType::Empty,
+            SlotType::Empty,
+            SlotType::Ram(RamSlot::new(0x0000, 0x10000)),
+        ]);
+        // read the binary file roms/hotbit.rom
+        let rom = std::fs::read("roms/hotbit.rom").unwrap();
+        machine.load_rom(0, &rom);
+        loop {
+            machine.step();
+            if machine.halted() {
+                break;
+            }
+        }
     }
 }

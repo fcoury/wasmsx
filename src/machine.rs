@@ -1,4 +1,4 @@
-use std::{cell::RefCell, fmt};
+use std::{cell::RefCell, fmt, rc::Rc};
 
 use z80::{Z80_io, Z80};
 
@@ -9,101 +9,43 @@ use crate::{
     vdp::TMS9918,
 };
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct ProgramEntry {
-    pub address: u16,
-    pub instruction: String,
-    pub data: String,
-    pub dump: Option<String>,
-}
-
-impl fmt::Display for ProgramEntry {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{:04X}  {:<12}  {:<20} {}",
-            self.address,
-            self.data,
-            self.instruction,
-            self.dump.as_deref().unwrap_or("")
-        )
-    }
-}
-
-pub struct Io {
-    pub bus: RefCell<Bus>,
-}
-
-impl Z80_io for Io {
-    fn read_byte(&self, address: u16) -> u8 {
-        self.bus.borrow().read_byte(address)
-    }
-
-    fn write_byte(&mut self, address: u16, value: u8) {
-        self.bus.borrow_mut().write_byte(address, value)
-    }
-
-    fn port_in(&self, port: u16) -> u8 {
-        self.bus.borrow_mut().input(port as u8)
-    }
-
-    fn port_out(&mut self, port: u16, value: u8) {
-        self.bus.borrow_mut().output(port as u8, value)
-    }
-}
-
-// #[derive(Derivative, Serialize, Deserialize)]
-// #[derivative(Clone, Debug, PartialEq, Eq)]
-
 pub struct Machine {
+    pub bus: Rc<RefCell<Bus>>,
     pub cpu: Z80<Io>,
     pub current_scanline: u16,
 }
 
-impl Default for Machine {
-    fn default() -> Self {
-        println!("Initializing MSX...");
-        let bus = RefCell::new(Bus::default());
-        let io = Io { bus };
+impl Machine {
+    pub fn new(slots: &[SlotType]) -> Self {
+        let bus = Rc::new(RefCell::new(Bus::new(slots)));
+        let io = Io::new(bus.clone());
         let cpu = Z80::new(io);
 
         Self {
-            cpu,
-            current_scanline: 0,
-        }
-    }
-}
-
-impl Machine {
-    pub fn new(slots: &[SlotType]) -> Self {
-        let cpu = Z80::new(Io {
-            bus: RefCell::new(Bus::new(slots)),
-        });
-
-        Self {
+            bus,
             cpu,
             current_scanline: 0,
         }
     }
 
     pub fn load_rom(&mut self, slot: u8, data: &[u8]) {
-        self.cpu.io.bus.borrow_mut().load_rom(slot, data);
+        self.bus.borrow_mut().load_rom(slot, data);
     }
 
     pub fn load_ram(&mut self, slot: u8) {
-        self.cpu.io.bus.borrow_mut().load_ram(slot);
+        self.bus.borrow_mut().load_ram(slot);
     }
 
     pub fn load_empty(&mut self, slot: u8) {
-        self.cpu.io.bus.borrow_mut().load_empty(slot);
+        self.bus.borrow_mut().load_empty(slot);
     }
 
     pub fn print_memory_page_info(&self) {
-        self.cpu.io.bus.borrow().print_memory_page_info();
+        self.bus.borrow().print_memory_page_info();
     }
 
     pub fn get_vdp(&self) -> TMS9918 {
-        self.cpu.io.bus.borrow().vdp.clone()
+        self.bus.borrow().vdp.clone()
     }
 
     pub fn mem_size(&self) -> usize {
@@ -114,13 +56,13 @@ impl Machine {
     pub fn ram(&self) -> Vec<u8> {
         let mut memory = Vec::new();
         for pc in 0..self.mem_size() {
-            memory.push(self.cpu.io.read_byte(pc as u16));
+            memory.push(self.bus.borrow().read_byte(pc as u16));
         }
         memory
     }
 
     pub fn vram(&self) -> Vec<u8> {
-        self.cpu.io.bus.borrow().vdp.vram.to_vec()
+        self.bus.borrow().vdp.vram.to_vec()
     }
 
     pub fn pc(&self) -> u16 {
@@ -129,10 +71,6 @@ impl Machine {
 
     pub fn halted(&self) -> bool {
         self.cpu.halted
-    }
-
-    pub fn get_memory(&self, address: u16) -> u8 {
-        self.cpu.io.read_byte(address)
     }
 
     pub fn memory_dump(&mut self, start: u16, end: u16) -> String {
@@ -144,12 +82,12 @@ impl Machine {
     }
 
     pub fn vram_dump(&self) -> String {
-        let vdp = self.cpu.io.bus.borrow().vdp.clone();
+        let vdp = self.bus.borrow().vdp.clone();
         hexdump(&vdp.vram, 0, 0x4000)
     }
 
     pub fn vdp(&self) -> TMS9918 {
-        self.cpu.io.bus.borrow().vdp.clone()
+        self.bus.borrow().vdp.clone()
     }
 
     pub fn step(&mut self) {
@@ -158,11 +96,31 @@ impl Machine {
     }
 
     pub fn primary_slot_config(&self) -> u8 {
-        self.cpu.io.bus.borrow().primary_slot_config()
+        self.bus.borrow().primary_slot_config()
     }
 
     pub fn memory_segments(&self) -> Vec<MemorySegment> {
-        self.cpu.io.bus.borrow().memory_segments()
+        self.bus.borrow().memory_segments()
+    }
+}
+
+impl Default for Machine {
+    fn default() -> Self {
+        println!("Initializing MSX...");
+        let bus = Rc::new(RefCell::new(Bus::new(&[
+            SlotType::Empty,
+            SlotType::Empty,
+            SlotType::Empty,
+            SlotType::Empty,
+        ])));
+        let io = Io::new(bus.clone());
+        let cpu = Z80::new(io);
+
+        Self {
+            cpu,
+            bus,
+            current_scanline: 0,
+        }
     }
 }
 
@@ -194,5 +152,54 @@ impl MachineBuilder {
 
     pub fn build(&self) -> Machine {
         Machine::new(&self.slots)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProgramEntry {
+    pub address: u16,
+    pub instruction: String,
+    pub data: String,
+    pub dump: Option<String>,
+}
+
+impl fmt::Display for ProgramEntry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{:04X}  {:<12}  {:<20} {}",
+            self.address,
+            self.data,
+            self.instruction,
+            self.dump.as_deref().unwrap_or("")
+        )
+    }
+}
+
+pub struct Io {
+    pub bus: Rc<RefCell<Bus>>,
+}
+
+impl Io {
+    pub fn new(bus: Rc<RefCell<Bus>>) -> Self {
+        Self { bus }
+    }
+}
+
+impl Z80_io for Io {
+    fn read_byte(&self, address: u16) -> u8 {
+        self.bus.borrow().read_byte(address)
+    }
+
+    fn write_byte(&mut self, address: u16, value: u8) {
+        self.bus.borrow_mut().write_byte(address, value)
+    }
+
+    fn port_in(&self, port: u16) -> u8 {
+        self.bus.borrow_mut().input(port as u8)
+    }
+
+    fn port_out(&mut self, port: u16, value: u8) {
+        self.bus.borrow_mut().output(port as u8, value)
     }
 }

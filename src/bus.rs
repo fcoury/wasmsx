@@ -1,6 +1,5 @@
 use std::fmt;
 
-use derivative::Derivative;
 use serde::{Deserialize, Serialize};
 use tracing::error;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -28,58 +27,38 @@ impl fmt::Display for MemorySegment {
     }
 }
 
-#[derive(Derivative, Clone, Serialize, Deserialize)]
-#[derivative(Debug, PartialEq)]
 pub struct Bus {
-    slot_count: u8,
-
     // I/O Devices
     pub vdp: TMS9918,
     pub psg: AY38910,
     pub ppi: Ppi,
 
-    vdp_io_clock: u8,
     slots: [SlotType; 4],
-
-    wrote_to_ppi: bool,
 }
 
 impl Default for Bus {
     fn default() -> Self {
-        let slot_count = 4;
-
-        Self {
-            slot_count,
-            vdp: TMS9918::new(),
-            psg: AY38910::new(),
-            ppi: Ppi::new(),
-            vdp_io_clock: 0,
-            slots: [
-                SlotType::Empty,
-                SlotType::Empty,
-                SlotType::Empty,
-                SlotType::Empty,
-            ],
-            wrote_to_ppi: false,
-        }
+        Bus::new(&[
+            SlotType::Empty,
+            SlotType::Empty,
+            SlotType::Empty,
+            SlotType::Empty,
+        ])
     }
 }
 
 impl Bus {
     pub fn new(slots: &[SlotType]) -> Self {
         Self {
-            slot_count: 4,
             vdp: TMS9918::new(),
             psg: AY38910::new(),
             ppi: Ppi::new(),
-            vdp_io_clock: 0,
             slots: [
                 slots.get(0).unwrap().clone(),
                 slots.get(1).unwrap().clone(),
                 slots.get(2).unwrap().clone(),
                 slots.get(3).unwrap().clone(),
             ],
-            wrote_to_ppi: false,
         }
     }
 
@@ -109,20 +88,11 @@ impl Bus {
         match port {
             0x98 | 0x99 => self.vdp.write(port, data),
             0xA0 | 0xA1 => self.psg.write(port, data),
-            0xA8 | 0xA9 | 0xAA | 0xAB => {
-                self.wrote_to_ppi = true;
-                self.ppi.write(port, data);
-            }
+            0xA8 | 0xA9 | 0xAA | 0xAB => self.ppi.write(port, data),
             _ => {
                 error!("[BUS] Invalid port {:02X} write", port);
             }
         };
-    }
-
-    pub fn wrote_to_ppi(&mut self) -> bool {
-        let wrote_to_ppi = self.wrote_to_ppi;
-        self.wrote_to_ppi = false;
-        wrote_to_ppi
     }
 
     pub fn read_byte(&self, addr: u16) -> u8 {
