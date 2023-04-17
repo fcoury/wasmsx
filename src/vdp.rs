@@ -1,47 +1,56 @@
 #![allow(dead_code)]
 
+use std::{cell::RefCell, rc::Rc};
+
 use serde::{Deserialize, Serialize};
-use serde_big_array::BigArray;
 use tracing::{error, info};
 
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
-pub struct Sprite {
-    pub x: u8,
-    pub y: u8,
-    pub pattern: u32,
-    pub color: u8,
-    pub collision: bool,
-}
+use crate::bus::Message;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum DisplayMode {
-    Text1,      // screen 0 - 40x80 text
-    Graphic1,   // screen 1 - 32x64 multicolor
-    Graphic2,   // screen 2 - 256x192 4-color
-    Multicolor, // screen 3 - 256x192 16-color
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone)]
 pub struct TMS9918 {
-    #[serde(with = "BigArray")]
+    pub queue: Rc<RefCell<Vec<Message>>>,
+
+    // #[serde(with = "BigArray")]
     pub vram: [u8; 0x4000],
     pub data_pre_read: u8, // read-ahead value
     pub registers: [u8; 8],
     pub status: u8,
     pub address: u16,
     pub first_write: Option<u8>,
-    #[serde(with = "BigArray")]
+    // #[serde(with = "BigArray")]
     pub screen_buffer: [u8; 256 * 192],
     pub sprites: [Sprite; 8],
     pub frame: u8,
     pub line: u8,
     pub vblank: bool,
     pub display_mode: DisplayMode,
+    pub f: u8,
+    pub fh: u8,
+    pub sprites_collided: bool,
+    pub sprites_invalid: Option<u8>,
+    pub sprites_max_computed: u8,
+
+    pub blink_page_duration: u8,
+    pub blink_per_line: bool,
+    pub blink_even_page: bool,
+    pub blanking_change_pending: bool,
+
+    pub layout_table_address: u16,
+    pub layout_table_address_mask: u16,
+    pub layout_table_address_mask_set_value: u16,
+
+    pub color_table_address: u16,
+    pub color_table_address_mask: u16,
+
+    pub pattern_table_address: u16,
+    pub pattern_table_address_mask: u16,
 }
 
-impl Default for TMS9918 {
-    fn default() -> Self {
+impl TMS9918 {
+    pub fn new(queue: Rc<RefCell<Vec<Message>>>) -> Self {
         Self {
+            queue,
             vram: [0; 0x4000],
             data_pre_read: 0,
             registers: [0; 8],
@@ -60,13 +69,29 @@ impl Default for TMS9918 {
             line: 0,
             vblank: false,
             display_mode: DisplayMode::Text1,
-        }
-    }
-}
 
-impl TMS9918 {
-    pub fn new() -> Self {
-        Self::default()
+            f: 0,
+            fh: 0,
+
+            sprites_collided: false,
+            sprites_invalid: None,
+            sprites_max_computed: 0,
+
+            blink_per_line: false,
+            blink_even_page: false,
+            blink_page_duration: 0,
+            blanking_change_pending: false,
+
+            layout_table_address: 0,
+            layout_table_address_mask: 0,
+            layout_table_address_mask_set_value: 0,
+
+            color_table_address: 0,
+            color_table_address_mask: 0,
+
+            pattern_table_address: 0,
+            pattern_table_address_mask: 0,
+        }
     }
 
     pub fn reset(&mut self) {
@@ -87,6 +112,16 @@ impl TMS9918 {
         self.frame = 0;
         self.line = 0;
         self.vblank = false;
+        self.display_mode = DisplayMode::Text1;
+        self.f = 0;
+        self.fh = 0;
+        self.sprites_collided = false;
+        self.sprites_invalid = None;
+        self.sprites_max_computed = 0;
+
+        self.update_blinking();
+        self.update_color_table_address();
+        self.update_layout_table_address();
     }
 
     pub fn name_table_base_and_size(&self) -> (usize, usize) {
@@ -166,7 +201,7 @@ impl TMS9918 {
     }
 
     // WebMSX input98
-    fn read_vram(&mut self) -> u8 {
+    fn read98(&mut self) -> u8 {
         // reset the latch
         self.first_write = None;
 
@@ -209,12 +244,48 @@ impl TMS9918 {
     //     data
     // }
 
-    fn read_register(&mut self) -> u8 {
-        self.first_write = None;
-        let res = self.status;
-        // TODO: disable interrupt
-        self.status &= 0x7F;
+    fn read99(&mut self) -> u8 {
+        // self.first_write = None;
+        // let res = self.status;
+        // // TODO: disable interrupt
+        // self.status &= 0x7F;
+        // res
+
+        let mut res = 0;
+
+        // WebMSX getStatus0()
+        if self.f != 0 {
+            res |= 0x80;
+            self.f = 0;
+            self.update_irq();
+        }
+
+        if self.sprites_collided {
+            res |= 0x20;
+            self.sprites_collided = false;
+        }
+
+        if let Some(sprites_invalid) = self.sprites_invalid {
+            res |= 0x40 | sprites_invalid;
+            self.sprites_invalid = None;
+        } else {
+            res |= self.sprites_max_computed;
+        }
+
         res
+    }
+
+    pub fn update_irq(&self) {
+        if self.f != 0 && self.registers[1] & 0x20 != 0
+            || self.fh != 0 && self.registers[0] & 0x10 != 0
+        {
+            // self.irq = true;
+            tracing::info!("IRQ ON");
+            self.queue.borrow_mut().push(Message::EnableInterrupts)
+        } else {
+            tracing::info!("IRQ OFF");
+            self.queue.borrow_mut().push(Message::DisableInterrupts)
+        }
     }
 
     fn update_mode(&mut self) {
@@ -298,7 +369,7 @@ impl TMS9918 {
                         "[VDP] 1 - 0x20 - Enable line interrupt | Reg: {} | Value: 0x{:02X}",
                         reg, value
                     );
-                    // TODO self.update_irq();
+                    self.update_irq();
                 }
                 if modified & 0x40 != 0 {
                     // BL
@@ -306,6 +377,7 @@ impl TMS9918 {
                         "[VDP] 1 - 0x40 - Blanking change pending | Reg: {} | Value: 0x{:02X}",
                         reg, value
                     );
+                    self.blanking_change_pending = true;
                     // IE1: Frame interrupt enable
                     // WebMSX blanking_change_pending = true
                 }
@@ -323,7 +395,8 @@ impl TMS9918 {
                         "[VDP] 1 - 0x04 - Update blinking | Reg: {} | Value: 0x{:02X}",
                         reg, value
                     );
-                    // TODO WebMSX updateBlinking();
+                    // WebMSX updateBlinking();
+                    self.update_blinking();
                 }
                 if modified & 0x03 != 0 {
                     // SI, MAG
@@ -340,7 +413,7 @@ impl TMS9918 {
                         "[VDP] 2 - 0x7f - Update layout table address | Reg: {} | Value: 0x{:02X}",
                         reg, value
                     );
-
+                    self.update_layout_table_address();
                     // Update layout table address
                     // TODO WebMSX if (mod & 0x7f) updateLayoutTableAddress();
                 }
@@ -363,6 +436,7 @@ impl TMS9918 {
                     "[VDP] 3 - Update color table base address | Reg: {} | Value: 0x{:02X}",
                     reg, value
                 );
+                self.update_color_table_address();
 
                 // Mode Register 3 defines the starting address of the Colour Table in the VDP VRAM.
                 // The eight available bits only specify positions 00BB BBBB BB00 0000 of the full
@@ -384,6 +458,7 @@ impl TMS9918 {
                         "[VDP] 4 - 0x3f - Update pattern table address | Reg: {} | Value: 0x{:02X}",
                         reg, value
                     );
+                    self.update_pattern_table_address(value);
                     // Update pattern table address
                     // Implement the functionality based on the WebMSX code
                     // let cpt_base = (self.registers[4] as usize & 0x07) * 0x0800;
@@ -577,6 +652,60 @@ impl TMS9918 {
         }
     }
 
+    fn update_blinking(&mut self) {
+        self.blink_per_line = self.registers[1] & 0x04 != 0;
+        self.blink_even_page = false;
+        self.blink_page_duration = 0;
+
+        // blinkPerLine = (register[1] & 0x04) !== 0;               // Set Blinking speed per line instead of frame, based on undocumented CDR bit
+        // if ((register[13] >>> 4) === 0) {
+        //     blinkEvenPage = false; blinkPageDuration = 0;        // Force page to be fixed on the Odd page
+        // } else if ((register[13] & 0x0f) === 0) {
+        //     blinkEvenPage = true;  blinkPageDuration = 0;        // Force page to be fixed on the Even page
+        // } else {
+        //     blinkEvenPage = true;  blinkPageDuration = 1;        // Force next page to be the Even page and let alternance start
+        // }
+        // updateLayoutTableAddressMask();                          // To reflect correct page
+    }
+
+    fn mode_data(&self) -> &ModeData {
+        self.display_mode.mode_data()
+    }
+
+    fn update_color_table_address(&mut self) {
+        let add: u16 = ((self.registers[3] as u16) << 6) & 0x1fff;
+        self.color_table_address = (add as i16 & self.mode_data().color_t_base) as u16;
+        self.color_table_address_mask = (add as i16 | COLOR_TABLE_ADDRESS_MASK_BASE) as u16;
+    }
+
+    fn update_layout_table_address(&mut self) {
+        let add = self.registers[2] as i16 & 0x7f << 10;
+        self.layout_table_address = (add & -1024) as u16;
+        self.layout_table_address_mask_set_value = (add | LAYOUT_TABLE_ADDRESS_MASK_BASE) as u16;
+        // self.update_layout_table_address_mask();
+
+        // Interleaved modes (G6, G7, YJK, YAE) have different address bits position in reg 2. Only A16 can be specified for base address, A10 always set in mask
+        // var add = modeData.vramInter ?((register[2] & 0x3f) << 11) | (1 << 10) : (register[2] & 0x7f) << 10;
+
+        // layoutTableAddress =  add & modeData.layTBase;
+        // layoutTableAddressMaskSetValue = add | layoutTableAddressMaskBase;
+        // updateLayoutTableAddressMask();
+    }
+
+    // fn update_layout_table_address_mask(&mut self) {
+    // this does nothing on the MSX1
+    // self.layout_table_address_mask = self.layout_table_address_mask_set_value & !0;
+
+    // layoutTableAddressMask = layoutTableAddressMaskSetValue &
+    //     (blinkEvenPage || ((register[9] & 0x04) && !EO) ? modeData.blinkPageMask : ~0);
+    // }
+
+    fn update_pattern_table_address(&mut self, val: u8) {
+        let add: u16 = ((val as u16) << 11) & 0x1fff;
+        self.pattern_table_address = (add as i16 & self.mode_data().pattern_t_base) as u16;
+        self.pattern_table_address_mask = (add as i16 | PATTERN_TABLE_ADDRESS_MASK_BASE) as u16;
+    }
+
     fn write_99(&mut self, val: u8) {
         // info!(
         //     "[VDP] Port: 99 | Address: {:04X} | Data: 0x{:02X} ({}).",
@@ -656,9 +785,9 @@ impl TMS9918 {
     pub fn read(&mut self, port: u8) -> u8 {
         match port {
             // VRAM Read
-            0x98 => self.read_vram(),
+            0x98 => self.read98(),
             // Register read
-            0x99 => self.read_register(),
+            0x99 => self.read99(),
             _ => {
                 error!("Invalid port: {:02X}", port);
                 0xFF
@@ -677,3 +806,98 @@ impl TMS9918 {
         }
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum DisplayMode {
+    Text1,      // screen 0 - 40x80 text
+    Graphic1,   // screen 1 - 32x64 multicolor
+    Graphic2,   // screen 2 - 256x192 4-color
+    Multicolor, // screen 3 - 256x192 16-color
+}
+
+impl DisplayMode {
+    fn mode_data(&self) -> &ModeData {
+        match self {
+            DisplayMode::Text1 => &MODE_DATA_TEXT1,
+            DisplayMode::Graphic1 => &MODE_DATA_GRAPHIC1,
+            DisplayMode::Graphic2 => &MODE_DATA_GRAPHIC2,
+            DisplayMode::Multicolor => &MODE_DATA_MULTICOLOR,
+        }
+    }
+}
+
+struct ModeData {
+    color_t_base: i16,
+    pattern_t_base: i16,
+    sprite_attr_t_base: i16,
+    sprite_mode: u8,
+    text_cols: u8,
+}
+
+impl ModeData {
+    pub fn new(
+        color_t_base: i16,
+        pattern_t_base: i16,
+        sprite_attr_t_base: i16,
+        sprite_mode: u8,
+        text_cols: u8,
+    ) -> Self {
+        Self {
+            color_t_base,
+            pattern_t_base,
+            sprite_attr_t_base,
+            sprite_mode,
+            text_cols,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Sprite {
+    pub x: u8,
+    pub y: u8,
+    pub pattern: u32,
+    pub color: u8,
+    pub collision: bool,
+}
+
+// modes[0x10] = { name:  "T1", colorTBase:        0, patTBase: -1 << 11, sprAttrTBase:        0, spriteMode: 0, textCols: 40 };
+// modes[0x00] = { name:  "G1", colorTBase: -1 <<  6, patTBase: -1 << 11, sprAttrTBase: -1 <<  7, spriteMode: 1, textCols: 32 };
+// modes[0x01] = { name:  "G2", colorTBase: -1 << 13, patTBase: -1 << 13, sprAttrTBase: -1 <<  7, spriteMode: 1, textCols: 0 };
+// modes[0x08] = { name:  "MC", colorTBase:        0, patTBase: -1 << 11, sprAttrTBase: -1 <<  7, spriteMode: 1, textCols: 0 };
+
+const MODE_DATA_TEXT1: ModeData = ModeData {
+    color_t_base: 0x0000,
+    pattern_t_base: 0x0000,
+    sprite_attr_t_base: 0x0000,
+    sprite_mode: 0,
+    text_cols: 40,
+};
+
+const MODE_DATA_GRAPHIC1: ModeData = ModeData {
+    color_t_base: -1 << 6,
+    pattern_t_base: -1 << 11,
+    sprite_attr_t_base: -1 << 7,
+    sprite_mode: 1,
+    text_cols: 32,
+};
+
+const MODE_DATA_GRAPHIC2: ModeData = ModeData {
+    color_t_base: 0x3E00,
+    pattern_t_base: -1 << 13,
+    sprite_attr_t_base: 0x3F80,
+    sprite_mode: 1,
+    text_cols: 0,
+};
+
+const MODE_DATA_MULTICOLOR: ModeData = ModeData {
+    color_t_base: 0x3E00,
+    pattern_t_base: -1 << 11,
+    sprite_attr_t_base: 0x3F80,
+    sprite_mode: 1,
+    text_cols: 0,
+};
+
+const COLOR_TABLE_ADDRESS_MASK_BASE: i16 = !(-1 << 6);
+const LAYOUT_TABLE_ADDRESS_MASK_BASE: i16 = !(-1 << 10);
+const PATTERN_TABLE_ADDRESS_MASK_BASE: i16 = !(-1 << 11);

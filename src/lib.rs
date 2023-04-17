@@ -53,14 +53,8 @@ impl JsMachine {
         self.0.ram()
     }
 
-    pub fn step(&mut self) {
-        self.0.step();
-    }
-
     pub fn step_for(&mut self, n: usize) {
-        for _ in 0..n {
-            self.0.step();
-        }
+        self.0.step_for(n);
     }
 
     pub fn screen(&self) -> Vec<u8> {

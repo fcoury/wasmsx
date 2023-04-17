@@ -3,7 +3,7 @@ use std::{cell::RefCell, fmt, rc::Rc};
 use z80::{Z80_io, Z80};
 
 use crate::{
-    bus::{Bus, MemorySegment},
+    bus::{Bus, MemorySegment, Message},
     slot::{RamSlot, RomSlot, SlotType},
     utils::hexdump,
     vdp::TMS9918,
@@ -12,18 +12,21 @@ use crate::{
 pub struct Machine {
     pub bus: Rc<RefCell<Bus>>,
     pub cpu: Z80<Io>,
+    pub queue: Rc<RefCell<Vec<Message>>>,
     pub current_scanline: u16,
 }
 
 impl Machine {
     pub fn new(slots: &[SlotType]) -> Self {
-        let bus = Rc::new(RefCell::new(Bus::new(slots)));
+        let queue = Rc::new(RefCell::new(Vec::new()));
+        let bus = Rc::new(RefCell::new(Bus::new(slots, queue.clone())));
         let io = Io::new(bus.clone());
         let cpu = Z80::new(io);
 
         Self {
             bus,
             cpu,
+            queue,
             current_scanline: 0,
         }
     }
@@ -90,9 +93,30 @@ impl Machine {
         self.bus.borrow().vdp.clone()
     }
 
-    pub fn step(&mut self) {
-        self.cpu.step();
-        self.current_scanline = (self.current_scanline + 1) % 192;
+    pub fn step_for(&mut self, n: usize) {
+        self.queue.borrow_mut().push(Message::CpuStep);
+
+        loop {
+            let Some(message) = self.queue.borrow_mut().pop() else {
+                break;
+            };
+
+            match message {
+                Message::EnableInterrupts => {
+                    tracing::info!("Enabling interrupts");
+                    self.cpu.assert_irq(0);
+                }
+                Message::DisableInterrupts => {
+                    tracing::info!("Disabling interrupts");
+                    self.cpu.clr_irq();
+                }
+                Message::CpuStep => {
+                    for _ in 0..n {
+                        self.cpu.step();
+                    }
+                }
+            };
+        }
     }
 
     pub fn primary_slot_config(&self) -> u8 {
@@ -107,18 +131,23 @@ impl Machine {
 impl Default for Machine {
     fn default() -> Self {
         println!("Initializing MSX...");
-        let bus = Rc::new(RefCell::new(Bus::new(&[
-            SlotType::Empty,
-            SlotType::Empty,
-            SlotType::Empty,
-            SlotType::Empty,
-        ])));
+        let queue = Rc::new(RefCell::new(Vec::new()));
+        let bus = Rc::new(RefCell::new(Bus::new(
+            &[
+                SlotType::Empty,
+                SlotType::Empty,
+                SlotType::Empty,
+                SlotType::Empty,
+            ],
+            queue.clone(),
+        )));
         let io = Io::new(bus.clone());
         let cpu = Z80::new(io);
 
         Self {
             cpu,
             bus,
+            queue,
             current_scanline: 0,
         }
     }
