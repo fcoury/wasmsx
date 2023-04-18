@@ -1,6 +1,10 @@
 use std::cmp::{self, Ordering};
 
-pub fn hexdump(buffer: &[u8], start: u16, end: u16) -> String {
+pub fn hexdump(buffer: &[u8]) -> String {
+    partial_hexdump(buffer, 0, buffer.len() as u16 - 1)
+}
+
+pub fn partial_hexdump(buffer: &[u8], start: u16, end: u16) -> String {
     let mut str = String::new();
     let mut addr = start;
     while addr < end {

@@ -13,7 +13,7 @@ pub use internal_state::{InternalState, ReportState};
 pub use machine::MachineBuilder;
 pub use machine::{Machine, ProgramEntry};
 pub use renderer::Renderer;
-pub use utils::compare_slices;
+pub use utils::{compare_slices, hexdump, partial_hexdump};
 pub use vdp::TMS9918;
 use wasm_bindgen::prelude::*;
 
@@ -58,7 +58,8 @@ impl JsMachine {
     }
 
     pub fn screen(&self) -> Vec<u8> {
-        let bus = self.0.bus.borrow();
+        let mut bus = self.0.bus.borrow_mut();
+        bus.vdp.pulse();
         let mut renderer = Renderer::new(&bus.vdp);
         renderer.draw();
         renderer.screen_buffer.to_vec()

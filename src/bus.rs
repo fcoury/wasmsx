@@ -6,7 +6,10 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use z80::Z80_io;
 
 use super::{ppi::Ppi, sound::AY38910, vdp::TMS9918};
-use crate::slot::{RamSlot, RomSlot, SlotType};
+use crate::{
+    machine::Message,
+    slot::{RamSlot, RomSlot, SlotType},
+};
 
 pub struct Bus {
     // I/O Devices
@@ -190,13 +193,6 @@ impl Z80_io for Bus {
     fn write_byte(&mut self, addr: u16, data: u8) {
         self.write_byte(addr, data);
     }
-}
-
-#[derive(Debug)]
-pub enum Message {
-    EnableInterrupts,
-    DisableInterrupts,
-    CpuStep,
 }
 
 #[wasm_bindgen]

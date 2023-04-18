@@ -3,9 +3,9 @@ use std::{cell::RefCell, collections::VecDeque, fmt, rc::Rc};
 use z80::{Z80_io, Z80};
 
 use crate::{
-    bus::{Bus, MemorySegment, Message},
+    bus::{Bus, MemorySegment},
+    partial_hexdump,
     slot::{RamSlot, RomSlot, SlotType},
-    utils::hexdump,
     vdp::TMS9918,
 };
 
@@ -14,6 +14,7 @@ pub struct Machine {
     pub cpu: Z80<Io>,
     pub queue: Rc<RefCell<VecDeque<Message>>>,
     pub current_scanline: u16,
+    pub cycles: usize,
 }
 
 impl Machine {
@@ -28,6 +29,7 @@ impl Machine {
             cpu,
             queue,
             current_scanline: 0,
+            cycles: 0,
         }
     }
 
@@ -77,7 +79,7 @@ impl Machine {
     }
 
     pub fn memory_dump(&mut self, start: u16, end: u16) -> String {
-        hexdump(&self.ram(), start, end)
+        partial_hexdump(&self.ram(), start, end)
     }
 
     pub fn memory(&self) -> Vec<u8> {
@@ -86,7 +88,7 @@ impl Machine {
 
     pub fn vram_dump(&self) -> String {
         let vdp = self.bus.borrow().vdp.clone();
-        hexdump(&vdp.vram, 0, 0x4000)
+        partial_hexdump(&vdp.vram, 0, 0x4000)
     }
 
     pub fn vdp(&self) -> TMS9918 {
@@ -114,19 +116,15 @@ impl Machine {
                 Message::CpuStep => {
                     self.cpu.step();
                 }
+                Message::DebugPC => {
+                    tracing::info!("Cycles: {} PC: {:04X}", self.cycles, self.cpu.pc);
+                }
             };
 
             if steps < n {
                 self.queue.borrow_mut().push_back(Message::CpuStep);
+                self.cycles += 1;
                 steps += 1;
-
-                if !matches!(message, Message::CpuStep) {
-                    tracing::info!(
-                        "Processed message: {:?} of {}",
-                        message,
-                        self.queue.borrow().len()
-                    );
-                }
             }
         }
     }
@@ -160,6 +158,7 @@ impl Default for Machine {
             cpu,
             bus,
             queue,
+            cycles: 0,
             current_scanline: 0,
         }
     }
@@ -215,6 +214,14 @@ impl fmt::Display for ProgramEntry {
             self.dump.as_deref().unwrap_or("")
         )
     }
+}
+
+#[derive(Debug)]
+pub enum Message {
+    EnableInterrupts,
+    DisableInterrupts,
+    CpuStep,
+    DebugPC,
 }
 
 pub struct Io {

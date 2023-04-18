@@ -657,6 +657,7 @@ name = "wasmsx"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ctor",
  "derivative",
  "js-sys",
  "serde",

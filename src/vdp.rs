@@ -5,7 +5,7 @@ use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 use serde::{Deserialize, Serialize};
 use tracing::{error, info};
 
-use crate::bus::Message;
+use crate::machine::Message;
 
 #[derive(Clone)]
 pub struct TMS9918 {
@@ -94,6 +94,52 @@ impl TMS9918 {
         }
     }
 
+    pub fn new_with_vram(queue: Rc<RefCell<VecDeque<Message>>>, vram: Vec<u8>) -> Self {
+        Self {
+            queue,
+            vram: vram.try_into().unwrap(),
+            data_pre_read: 0,
+            registers: [0; 8],
+            status: 0,
+            address: 0,
+            first_write: None,
+            screen_buffer: [0; 256 * 192],
+            sprites: [Sprite {
+                x: 0,
+                y: 0,
+                pattern: 0,
+                color: 0,
+                collision: false,
+            }; 8],
+            frame: 0,
+            line: 0,
+            vblank: false,
+            display_mode: DisplayMode::Graphic1,
+
+            f: 0,
+            fh: 0,
+
+            sprites_collided: false,
+            sprites_invalid: None,
+            sprites_max_computed: 0,
+
+            blink_per_line: false,
+            blink_even_page: false,
+            blink_page_duration: 0,
+            blanking_change_pending: false,
+
+            layout_table_address: 0,
+            layout_table_address_mask: 0,
+            layout_table_address_mask_set_value: 0,
+
+            color_table_address: 0,
+            color_table_address_mask: 0,
+
+            pattern_table_address: 0,
+            pattern_table_address_mask: 0,
+        }
+    }
+
     pub fn reset(&mut self) {
         self.vram = [0; 0x4000];
         self.data_pre_read = 0;
@@ -120,7 +166,7 @@ impl TMS9918 {
         self.sprites_max_computed = 0;
 
         self.update_blinking();
-        self.update_color_table_address();
+        // self.update_color_table_address();
         self.update_layout_table_address();
     }
 
@@ -177,10 +223,14 @@ impl TMS9918 {
 
     pub fn color_table(&self) -> &[u8] {
         // Calculate the base address of the color table using register R#3
-        let ct_base = (self.registers[3] as usize & 0x7F) * 0x040;
-        info!("[VDP] calculated color table base_address: {:04X}", ct_base);
+        // let ct_base = (self.registers[3] as usize & 0x7F) * 0x040;
+        // info!("[VDP] calculated color table base_address: {:04X}", ct_base);
+        // info!(
+        //     "[VDP] set color table base_address: {:04X}",
+        //     self.color_table_address
+        // );
+        // let ct_base = self.color_table_address as usize;
         let ct_base = 0x2000;
-        info!("[VDP] color table base_address: {:04X}", ct_base);
         let ct_table_size = 6 * 1027; // 6k
                                       // tracing::info!("color table base_address: {:04X}", ct_base);
         &self.vram[ct_base..(ct_base + ct_table_size)]
@@ -219,17 +269,6 @@ impl TMS9918 {
     }
 
     fn write_98(&mut self, data: u8) {
-        // info!(
-        //     "[VDP] Write 0x{:04x}: {:02x} [{}]",
-        //     self.address,
-        //     data,
-        //     if data.is_ascii_graphic() {
-        //         data as char
-        //     } else {
-        //         '.'
-        //     }
-        // );
-
         self.vram[self.address as usize] = data;
         self.data_pre_read = data;
         self.address = (self.address + 1) & 0x3FFF;
@@ -353,6 +392,7 @@ impl TMS9918 {
                         "[VDP] Update IRQ (WIP) | Reg: {} | Value: 0x{:02X}",
                         reg, value
                     );
+                    self.update_irq();
                 }
                 if modified & 0x0e != 0 {
                     info!(
@@ -427,6 +467,8 @@ impl TMS9918 {
                         "[VDP] 10 - 0x07 - Update color table address | Reg: {} | Value: 0x{:02X}",
                         reg, value
                     );
+                    self.update_color_table_address(ColorTablePart::High(value & 7));
+                    self.queue.borrow_mut().push_front(Message::DebugPC);
 
                     // Update color table address
                     // Implement the functionality based on the WebMSX code
@@ -439,7 +481,8 @@ impl TMS9918 {
                     "[VDP] 3 - Update color table base address | Reg: {} | Value: 0x{:02X}",
                     reg, value
                 );
-                self.update_color_table_address();
+                self.update_color_table_address(ColorTablePart::Low(value));
+                self.queue.borrow_mut().push_back(Message::DebugPC);
 
                 // Mode Register 3 defines the starting address of the Colour Table in the VDP VRAM.
                 // The eight available bits only specify positions 00BB BBBB BB00 0000 of the full
@@ -675,10 +718,42 @@ impl TMS9918 {
         self.display_mode.mode_data()
     }
 
-    fn update_color_table_address(&mut self) {
-        let add: u16 = ((self.registers[3] as u16) << 6) & 0x1fff;
-        self.color_table_address = (add as i16 & self.mode_data().color_t_base) as u16;
-        self.color_table_address_mask = (add as i16 | COLOR_TABLE_ADDRESS_MASK_BASE) as u16;
+    fn update_color_table_address(&mut self, part: ColorTablePart) {
+        // let add: u16 = ((self.registers[3] as u16) << 6) & 0x1fff;
+        // tracing::debug!("[VDP] Setting color table address. Start = {:04X}", add);
+        // self.color_table_address = (add as i16 & self.mode_data().color_t_base) as u16;
+        // tracing::debug!(
+        //     "[VDP] Setting color table address. Final with color_t_base = {:04X} => {:04X}",
+        //     self.mode_data().color_t_base,
+        //     self.color_table_address
+        // );
+
+        // Mode Register 3 defines the starting address of the Colour Table in the VDP VRAM.
+        // The eight available bits only specify positions 00BB BBBB BB00 0000 of the full
+        // address so register contents of FFH would result in a base address of 3FC0H. In
+        // Graphics Mode only bit 7 is effective thus offering a base of 0000H or 2000H.
+        // Bits 0 to 6 must be 1.
+        //
+        // So receiving a value of 0x80 (1000 0000) would result in a base address of 2000H.
+
+        match part {
+            ColorTablePart::Low(val) => {
+                tracing::info!("Setting lower color byte to {:02X}", val);
+                self.color_table_address = (val as u16) << 6;
+            }
+            ColorTablePart::High(val) => {
+                tracing::info!("Setting higher color byte to {:02X}", val);
+                self.color_table_address = (((self.color_table_address << 6) + (val as u16)) << 14)
+                    & self.vram.len() as u16;
+            }
+        }
+
+        tracing::info!(
+            "Color table address is now {:04X}",
+            self.color_table_address
+        );
+        self.color_table_address_mask =
+            (self.color_table_address as i16 | COLOR_TABLE_ADDRESS_MASK_BASE) as u16;
     }
 
     fn update_layout_table_address(&mut self) {
@@ -808,6 +883,14 @@ impl TMS9918 {
             }
         }
     }
+
+    pub fn pulse(&mut self) {
+        // VR = 1;                             // VR = 1
+        if self.f == 0 {
+            self.f = 1;
+            self.update_irq();
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -862,6 +945,11 @@ pub struct Sprite {
     pub pattern: u32,
     pub color: u8,
     pub collision: bool,
+}
+
+enum ColorTablePart {
+    High(u8),
+    Low(u8),
 }
 
 // modes[0x10] = { name:  "T1", colorTBase:        0, patTBase: -1 << 11, sprAttrTBase:        0, spriteMode: 0, textCols: 40 };

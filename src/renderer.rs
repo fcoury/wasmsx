@@ -71,16 +71,12 @@ impl<'a> Renderer<'a> {
     pub fn render_text1(&mut self, line: usize) {
         let fg = self.vdp.registers[7] & 0xF0;
         let bg = self.vdp.registers[7] & 0x0F;
-        // let fg = 15;
-        // let bg = 1;
 
         let caracter_pattern_area = self.vdp.char_pattern_table();
         let l = (line + self.vdp.get_vertical_scroll()) & 7;
 
         // Calculate the base address of the PNT using register R#2
         let pnt_base = (self.vdp.registers[2] as usize & 0x0F) * 0x0400;
-        // let (pnt_base, _) = self.vdp.name_table_base_and_size();
-        // tracing::info!("PNT_BASE = {:#04X}", pnt_base as u16);
 
         let name_start = (line / 8) * 40;
         let name_end = name_start + 40;
@@ -100,24 +96,25 @@ impl<'a> Renderer<'a> {
     }
 
     pub fn render_graphic1(&mut self, line: usize) {
-        // let fg = self.vdp.registers[7] & 0xF0;
-        // let bg = self.vdp.registers[7] & 0x0F;
-        let fg = 15;
-        let bg = 1;
-
         let caracter_pattern_area = self.vdp.char_pattern_table();
         let l = (line + self.vdp.get_vertical_scroll()) & 7;
 
         // Calculate the base address of the PNT using register R#2
         let (pnt_base, _) = self.vdp.name_table_base_and_size();
 
+        // Calculate the color table base address
+        let color_table = self.vdp.color_table();
+
         let name_start = (line / 8) * 32;
         let name_end = name_start + 32;
         let mut pixel_ptr = line * 256;
         for name in name_start..name_end {
-            let screen_offset = pnt_base + name; // Calculate the proper offset in the VRAM
-            let char_code = self.vdp.vram[screen_offset]; // Get the value directly from the VRAM array
+            let screen_offset = pnt_base + name;
+            let char_code = self.vdp.vram[screen_offset];
+            let color = color_table[char_code as usize / 8];
             let pattern = caracter_pattern_area[l + char_code as usize * 8];
+            let fg = color >> 4;
+            let bg = color & 0x0f;
 
             for i in 0..8 {
                 let mask = 0x80 >> i;
