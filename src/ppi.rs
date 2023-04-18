@@ -30,6 +30,15 @@ impl Ppi {
         self.update_caps_led();
     }
 
+    pub fn key_down(&mut self, key: String) {
+        if key == "KeyA" {
+            self.register_b = 0b10111111;
+        }
+        if key == "KeyB" {
+            self.register_b = 0b01111111;
+        }
+    }
+
     fn update_pulse_signal(&self) {
         // TODO: psg.set_pulse_signal((register_c & 0xa0) > 0);
     }
@@ -47,10 +56,16 @@ impl Ppi {
             }
             0xA9 => {
                 tracing::info!(
-                    "[PPI] [RD] [KeybordPort] [{:02X}] = {:02X}",
+                    "[PPI] [RD] [KeyboardPrt] [{:02X}] = {:02X}",
                     port,
                     self.register_b
                 );
+                if self.keyboard_row_selected == 2 {
+                    tracing::info!("[KEYBOARD] Attempt to press A");
+                    let ret = self.register_b;
+                    self.register_b = 0xFF;
+                    return ret;
+                }
                 self.read_keyboard()
             }
             0xAA => {
@@ -71,7 +86,7 @@ impl Ppi {
     }
 
     pub fn read_keyboard(&self) -> u8 {
-        0x00
+        0xff
     }
 
     pub fn write(&mut self, port: u8, value: u8) {

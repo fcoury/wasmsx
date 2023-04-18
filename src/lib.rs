@@ -70,8 +70,13 @@ impl JsMachine {
         self.0.bus.borrow().vdp.vram.to_vec()
     }
 
-    #[wasm_bindgen(getter=displayMode)]
+    #[wasm_bindgen(getter)]
     pub fn display_mode(&self) -> String {
         format!("{:?}", self.0.bus.borrow().vdp.display_mode)
+    }
+
+    #[wasm_bindgen(js_name=keyDown)]
+    pub fn key_down(&mut self, key: String) {
+        self.0.bus.borrow_mut().ppi.key_down(key);
     }
 }
