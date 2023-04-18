@@ -35,6 +35,14 @@ impl Bus {
         }
     }
 
+    pub fn key_down(&mut self, key: String) {
+        self.ppi.key_down(key);
+    }
+
+    pub fn key_up(&mut self, key: String) {
+        self.ppi.key_up(key);
+    }
+
     pub fn mem_size(&self) -> usize {
         0x10000
     }
@@ -51,7 +59,7 @@ impl Bus {
             0xA0 | 0xA1 => self.psg.read(port),
             0xA8 | 0xA9 | 0xAA | 0xAB => self.ppi.read(port),
             _ => {
-                error!("[BUS] Invalid port {:02X} read", port);
+                tracing::trace!("[BUS] Invalid port {:02X} read", port);
                 0xff
             }
         }
@@ -63,7 +71,7 @@ impl Bus {
             0xA0 | 0xA1 => self.psg.write(port, data),
             0xA8 | 0xA9 | 0xAA | 0xAB => self.ppi.write(port, data),
             _ => {
-                error!("[BUS] Invalid port {:02X} write", port);
+                tracing::trace!("[BUS] Invalid port {:02X} write", port);
             }
         };
     }

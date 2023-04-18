@@ -65,6 +65,7 @@ pre {
   justify-content: center;
   flex-direction: column;
   scrollbar-width: thin;
+  display: none;
 }
 
 .state {

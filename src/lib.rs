@@ -1,6 +1,7 @@
 pub mod bus;
 pub mod instruction;
 pub mod internal_state;
+pub mod keyboard;
 pub mod machine;
 pub mod ppi;
 pub mod renderer;
@@ -13,6 +14,7 @@ pub use internal_state::{InternalState, ReportState};
 pub use machine::MachineBuilder;
 pub use machine::{Machine, ProgramEntry};
 pub use renderer::Renderer;
+use tracing_wasm::WASMLayerConfigBuilder;
 pub use utils::{compare_slices, hexdump, partial_hexdump};
 pub use vdp::TMS9918;
 use wasm_bindgen::prelude::*;
@@ -33,12 +35,12 @@ pub struct JsMachine(Machine);
 impl JsMachine {
     #[wasm_bindgen(constructor)]
     pub fn new(rom_data: &[u8]) -> Self {
-        // tracing_wasm::set_as_global_default_with_config(
-        //     WASMLayerConfigBuilder::default()
-        //         .set_max_level(tracing::Level::DEBUG)
-        //         .build(),
-        // );
-        tracing_wasm::set_as_global_default();
+        tracing_wasm::set_as_global_default_with_config(
+            WASMLayerConfigBuilder::default()
+                .set_max_level(tracing::Level::DEBUG)
+                .build(),
+        );
+        // tracing_wasm::set_as_global_default();
 
         Self(get_machine(rom_data))
     }
@@ -70,13 +72,18 @@ impl JsMachine {
         self.0.bus.borrow().vdp.vram.to_vec()
     }
 
-    #[wasm_bindgen(getter)]
+    #[wasm_bindgen(getter = displayMode)]
     pub fn display_mode(&self) -> String {
         format!("{:?}", self.0.bus.borrow().vdp.display_mode)
     }
 
     #[wasm_bindgen(js_name=keyDown)]
     pub fn key_down(&mut self, key: String) {
-        self.0.bus.borrow_mut().ppi.key_down(key);
+        self.0.bus.borrow_mut().key_down(key);
+    }
+
+    #[wasm_bindgen(js_name=keyUp)]
+    pub fn key_up(&mut self, key: String) {
+        self.0.bus.borrow_mut().key_up(key);
     }
 }

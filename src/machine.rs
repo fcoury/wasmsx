@@ -106,11 +106,9 @@ impl Machine {
 
             match message {
                 Message::EnableInterrupts => {
-                    tracing::info!("Enabling interrupts");
                     self.cpu.assert_irq(0);
                 }
                 Message::DisableInterrupts => {
-                    tracing::info!("Disabling interrupts: {} {}", steps, n);
                     self.cpu.clr_irq();
                 }
                 Message::CpuStep => {

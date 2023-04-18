@@ -319,14 +319,14 @@ impl TMS9918 {
             || self.fh != 0 && self.registers[0] & 0x10 != 0
         {
             // self.irq = true;
-            tracing::info!("IRQ ON");
+            tracing::trace!("IRQ ON");
             self.queue.borrow_mut().push_back(Message::EnableInterrupts)
         } else {
-            tracing::info!("IRQ OFF: {:?}", self.queue.borrow());
+            tracing::trace!("IRQ OFF: {:?}", self.queue.borrow());
             self.queue
                 .borrow_mut()
                 .push_back(Message::DisableInterrupts);
-            tracing::info!("IRQ OFF: {:?}", self.queue.borrow());
+            tracing::trace!("IRQ OFF: {:?}", self.queue.borrow());
         }
     }
 

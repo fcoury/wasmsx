@@ -82,6 +82,8 @@ class App {
   private renderer: Renderer;
   private emulator: Emulator;
 
+  private debugVisible: boolean;
+
   /**
    * Constructs a new App instance.
    * @param {Renderer} renderer - The Renderer instance
@@ -90,14 +92,26 @@ class App {
   constructor(renderer: Renderer, emulator: Emulator) {
     this.renderer = renderer;
     this.emulator = emulator;
+    this.debugVisible = false;
   }
 
   /**
    * Handles keyDown events.
    * @param {string} key - The key code
+   * @returns {boolean} Whether the key was handled
    */
-  public keyDown(key: string) {
-    this.emulator.keyDown(key);
+  public keyDown(key: string): boolean {
+    return this.emulator.keyDown(key);
+  }
+
+  /**
+   * Handles keyUp events.
+   * @param {string} key - The key code
+   * @returns {boolean} Whether the key was handled
+   */
+  public keyUp(key: string): boolean {
+    const handled = this.emulator.keyUp(key);
+    return handled;
   }
 
   /**
@@ -110,8 +124,10 @@ class App {
     } else {
       this.emulator.run(dt);
       this.renderer.renderScreen(this.emulator.getScreen());
-      this.emulator.renderState();
-      this.emulator.renderVRAM();
+      if (this.debugVisible) {
+        this.emulator.renderState();
+        this.emulator.renderVRAM();
+      }
     }
   }
 }
@@ -128,7 +144,7 @@ class Emulator {
    * @param {Machine} machine - The Machine instance from the wasm module
    */
   constructor(machine: Machine) {
-    this.running = false;
+    this.running = true;
     this.machine = machine;
     this.timeBudget = 0;
     this.vram = document.getElementById("vram") as HTMLDivElement;
@@ -170,6 +186,9 @@ class Emulator {
     return this.machine.screen();
   }
 
+  /**
+   * Renders div with PC and display mode.
+   **/
   public renderState() {
     const { pc, displayMode } = this.machine;
 
@@ -185,6 +204,9 @@ class Emulator {
     `;
   }
 
+  /**
+   * Renders the VRAM hex dump.
+   */
   public renderVRAM() {
     const { vram } = this.machine;
 
@@ -212,15 +234,26 @@ class Emulator {
   /**
    * Handles keyDown events.
    * @param {string} key - The key code
+   * @returns {boolean} Whether the key was handled
    */
-  public keyDown(key: string) {
+  public keyDown(key: string): boolean {
     console.log("key", key);
+    return false;
   }
-}
 
-function onLoad() {
-  console.log("onload");
-  init().then(main);
+  /**
+   * Handles keyUp events.
+   * @param {string} key - The key code
+   * @returns {boolean} Whether the key was handled
+   */
+  public keyUp(key: string): boolean {
+    if (key === "Escape") {
+      this.toggleRunning();
+      return true;
+    }
+
+    return false;
+  }
 }
 
 function main() {
@@ -230,21 +263,24 @@ function main() {
   const app = new App(renderer, emulator);
   let lastTime = Date.now();
 
-  window.addEventListener("keyup", (e) => {
-    if (e.which >= 37 && e.which <= 40) {
-      e.preventDefault();
-    }
-
-    if (e.code === "Escape") {
-      emulator.toggleRunning();
+  window.addEventListener("keydown", (e) => {
+    if (app.keyDown(e.code)) {
       if (emulator.isRunning()) {
         requestAnimationFrame(frame);
       }
+      return;
     }
-
     machine.keyDown(e.code);
+  });
 
-    app.keyDown(e.code);
+  window.addEventListener("keyup", (e) => {
+    if (app.keyUp(e.code)) {
+      if (emulator.isRunning()) {
+        requestAnimationFrame(frame);
+      }
+      return;
+    }
+    machine.keyUp(e.code);
   });
 
   const frame = () => {
@@ -261,4 +297,8 @@ function main() {
   requestAnimationFrame(frame);
 }
 
-onLoad();
+function onLoad() {
+  init().then(main);
+}
+
+window.addEventListener("DOMContentLoaded", onLoad, false);

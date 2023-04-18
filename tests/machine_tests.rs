@@ -2,7 +2,7 @@ use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
 use tracing_subscriber::fmt;
 use wasmsx::{
-    hexdump, partial_hexdump,
+    partial_hexdump,
     slot::{RamSlot, RomSlot, SlotType},
     vdp::DisplayMode,
     Machine, Renderer, TMS9918,
