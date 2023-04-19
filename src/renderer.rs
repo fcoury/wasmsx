@@ -57,8 +57,9 @@ impl<'a> Renderer<'a> {
                     // screen 1
                     self.render_graphic1(y as usize);
                 }
-                DisplayMode::Graphic2 => { // screen 2
-                     // self.render_graphic2(y as usize);
+                DisplayMode::Graphic2 => {
+                    // screen 2
+                    self.render_graphic2(y as usize);
                 }
                 // DisplayMode::Multicolor => { // screen 3
                 //     self.render_text2(y as usize, fg, bg);
@@ -120,6 +121,37 @@ impl<'a> Renderer<'a> {
                 let mask = 0x80 >> i;
                 self.screen_buffer[pixel_ptr + i] = if (pattern & mask) != 0 { fg } else { bg };
             }
+
+            pixel_ptr += 8;
+        }
+    }
+
+    pub fn render_graphic2(&mut self, line: usize) {
+        tracing::info!("render_graphic2({})", line);
+        let line_in_color = self.vdp.color_table_address + (line as u16 & 0x07);
+        let line_in_pattern = self.vdp.pattern_table_address + (line as u16 & 0x07);
+        let block_extra: u8 = (line as u8 & 0xc0) << 2;
+        let (name_base_pos, _) = self.vdp.name_table_base_and_size();
+        // let name_pos_base = self.vdp.layout_table_address + ((line as u16 >> 3) << 5);
+        let mut name_pos = name_base_pos; // TODO: + left_scroll_chars_in_page
+
+        let mut pixel_ptr = line * 256;
+        for _ in 0..32 {
+            // name_pos = name_base_pos + ((line >> 3) << 5) + c;
+            let name = self.vdp.vram[name_pos] | block_extra;
+            name_pos += 1;
+
+            let color_offset = (name << 3) as u16 + line_in_color;
+            let color_offset: u16 = color_offset & self.vdp.color_table_address_mask;
+            let color_code = self.vdp.vram[color_offset as usize];
+
+            let pattern_offset = (name << 3) as u16 + line_in_pattern;
+            let pattern_offset: u16 = pattern_offset & self.vdp.pattern_table_address_mask;
+            let pattern = self.vdp.vram[pattern_offset as usize];
+
+            let on = color_code >> 4;
+            let off = color_code & 0x0f;
+            self.screen_buffer[pixel_ptr] = if (pattern & 0x80) != 0 { on } else { off };
 
             pixel_ptr += 8;
         }

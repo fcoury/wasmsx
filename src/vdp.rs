@@ -332,7 +332,9 @@ impl TMS9918 {
 
     fn set_display_mode(&mut self) {
         // Get the Mx bits from registers R#0 and R#0 - M3 is in R#1, M1 and M2 are in R#1
-        // let mx_bits = ((self.registers[0] & 0x0E) >> 1) | ((self.registers[1] & 0x18) << 2);
+        // var modeBits = (register[1] & 0x18) | ((register[0] & (isV9918 ? 0x02 : 0x0e)) >>> 1);
+
+        let mx_bits = (self.registers[1] & 0x18) | ((self.registers[0] & 0x02) >> 1);
 
         let r0 = self.registers[0];
         let r1 = self.registers[1];
@@ -340,7 +342,15 @@ impl TMS9918 {
         let m2: u8 = (r1 >> 3) & 0b0001;
         let m3: u8 = (r0 >> 1) & 0b0001;
 
-        tracing::info!("[VDP] M1: {:?} | M2: {:?} | M3: {:?}", m1, m2, m3);
+        tracing::info!(
+            "[VDP] R0: {} | R1: {} | M1: {:?} | M2: {:?} | M3: {:?} | mx_bits: {:2x}",
+            r0,
+            r1,
+            m1,
+            m2,
+            m3,
+            mx_bits
+        );
 
         let mx_bits: u8 = (m1 << 2) | (m2 << 1) | m3;
 

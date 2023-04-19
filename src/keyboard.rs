@@ -15,14 +15,14 @@ impl Keyboard {
         if let Some(key) = self.mappings.iter().find(|k| k.key == key) {
             self.pressed.insert(key.mapping.clone());
         }
-        tracing::info!("KeyDown: {}, Pressed: {:?}", key, self.pressed);
+        tracing::trace!("KeyDown: {}, Pressed: {:?}", key, self.pressed);
     }
 
     pub fn key_up(&mut self, key: String) {
         if let Some(key) = self.mappings.iter().find(|k| k.key == key) {
             self.pressed.remove(&key.mapping);
         }
-        tracing::info!("KeyUp: {}, Pressed: {:?}", key, self.pressed);
+        tracing::trace!("KeyUp: {}, Pressed: {:?}", key, self.pressed);
     }
 
     pub fn get_row(&mut self, row: u8) -> u8 {
@@ -30,7 +30,7 @@ impl Keyboard {
         let debug = !self.pressed.is_empty();
 
         if debug {
-            tracing::info!("Pressed: {:?}", self.pressed);
+            tracing::trace!("Pressed: {:?}", self.pressed);
         }
 
         let pressed_in_row = self
@@ -41,12 +41,12 @@ impl Keyboard {
 
         for key in pressed_in_row {
             // self.pressed.remove(&key.mapping);
-            tracing::info!("Deactivating bit: {}", key.col);
+            tracing::trace!("Deactivating bit: {}", key.col);
             ret &= !(1 << key.col);
         }
 
         if debug {
-            tracing::info!("Row: {} - Ret: {:8b}", row, ret);
+            tracing::trace!("Row: {} - Ret: {:8b}", row, ret);
         }
 
         ret

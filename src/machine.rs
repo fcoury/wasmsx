@@ -29,8 +29,13 @@ impl Machine {
             cpu,
             queue,
             current_scanline: 0,
-            cycles: 0,
+            cycles: 0, // cpu cycles
+                       // bus_cycles: 0, // bus cycles
         }
+    }
+
+    pub fn get_cycles(&self) -> usize {
+        self.cycles
     }
 
     pub fn load_rom(&mut self, slot: u8, data: &[u8]) {
