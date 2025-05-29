@@ -1,11 +1,10 @@
 use std::{cell::RefCell, collections::VecDeque, fmt, rc::Rc};
 
 use serde::{Deserialize, Serialize};
-use tracing::error;
 use wasm_bindgen::prelude::wasm_bindgen;
 use z80::Z80_io;
 
-use super::{ppi::Ppi, sound::AY38910, vdp::TMS9918};
+use super::{ppi::Ppi, psg::AY38910, vdp::TMS9918};
 use crate::{
     machine::Message,
     slot::{RamSlot, RomSlot, SlotType},

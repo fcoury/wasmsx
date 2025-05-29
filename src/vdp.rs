@@ -202,7 +202,6 @@ impl TMS9918 {
     //     &self.vram[base_address..=end_address]
     // }
 
-    // Character Pattern Table Base Address = register 2 * 0x400
     pub fn char_pattern_table(&self) -> &[u8] {
         let base_address = match self.display_mode {
             DisplayMode::Text1 => 0x0800,
@@ -218,8 +217,37 @@ impl TMS9918 {
             DisplayMode::Multicolor => 1536,
         };
 
-        &self.vram[base_address..(base_address + size)]
+        // Ensure the base_address and size do not exceed VRAM bounds
+        if base_address + size <= self.vram.len() {
+            &self.vram[base_address..(base_address + size)]
+        } else {
+            error!(
+                "Invalid character pattern table range: {:04X} to {:04X}",
+                base_address,
+                base_address + size
+            );
+            &self.vram[0..0] // Return an empty slice on error
+        }
     }
+
+    // // Character Pattern Table Base Address = register 2 * 0x400
+    // pub fn char_pattern_table(&self) -> &[u8] {
+    //     let base_address = match self.display_mode {
+    //         DisplayMode::Text1 => 0x0800,
+    //         DisplayMode::Graphic1 => 0x0000,
+    //         DisplayMode::Graphic2 => 0x0000,
+    //         DisplayMode::Multicolor => 0x0000,
+    //     };
+    //
+    //     let size = match self.display_mode {
+    //         DisplayMode::Text1 => 2 * 1024,
+    //         DisplayMode::Graphic1 => 2 * 1024,
+    //         DisplayMode::Graphic2 => 6 * 1024,
+    //         DisplayMode::Multicolor => 1536,
+    //     };
+    //
+    //     &self.vram[base_address..(base_address + size)]
+    // }
 
     pub fn color_table(&self) -> &[u8] {
         // Calculate the base address of the color table using register R#3
@@ -268,12 +296,25 @@ impl TMS9918 {
         data
     }
 
-    fn write_98(&mut self, data: u8) {
-        self.vram[self.address as usize] = data;
-        self.data_pre_read = data;
+    pub fn write_98(&mut self, data: u8) {
+        if self.address < self.vram.len() as u16 {
+            self.vram[self.address as usize] = data;
+            self.data_pre_read = data;
+        } else {
+            error!(
+                "Attempted to write to an invalid VRAM address: {:04X}",
+                self.address
+            );
+        }
         self.address = (self.address + 1) & 0x3FFF;
         self.first_write = None;
     }
+    // fn write_98(&mut self, data: u8) {
+    //     self.vram[self.address as usize] = data;
+    //     self.data_pre_read = data;
+    //     self.address = (self.address + 1) & 0x3FFF;
+    //     self.first_write = None;
+    // }
 
     // fn read_register(&mut self) -> u8 {
     //     let data = self.status;

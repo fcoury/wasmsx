@@ -47,7 +47,7 @@ class Renderer {
     this.ctx = ctx;
     this.screenImageData = this.ctx.createImageData(
       screen.width,
-      screen.height
+      screen.height,
     );
   }
 
@@ -219,7 +219,7 @@ class Emulator {
         const value = vram[i + j] as number;
         row.push(value.toString(16).padStart(2, "0"));
         chars.push(
-          value >= 32 && value <= 126 ? String.fromCharCode(value) : "."
+          value >= 32 && value <= 126 ? String.fromCharCode(value) : ".",
         );
       }
       const addr = i.toString(16).padStart(4, "0");
@@ -257,7 +257,7 @@ class Emulator {
 }
 
 function main() {
-  const machine = new Machine(ROMS.hotbit);
+  const machine = new Machine(ROMS.expert);
   const emulator = new Emulator(machine);
   const renderer = new Renderer({ width: 256, height: 192 });
   const app = new App(renderer, emulator);

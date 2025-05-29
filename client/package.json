@@ -10,8 +10,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "build:watch": "tsc --watch | awk '{gsub(\/\\033c\/,\"\") system(\"\")}1'",
-    "serve": "live-server --port=8080",
-    "dev": "concurrently \"tsc -w\" \"live-server --port=8080\""
+    "build:watch": "tsc --watch | awk '{gsub(/\\033c/,\"\") system(\"\")}1'",
+    "serve": "live-server --port=9090",
+    "dev": "concurrently \"tsc -w\" \"live-server --port=9090\""
   }
 }

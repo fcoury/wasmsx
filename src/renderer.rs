@@ -57,8 +57,10 @@ impl<'a> Renderer<'a> {
                     // screen 1
                     self.render_graphic1(y as usize);
                 }
-                DisplayMode::Graphic2 => { // screen 2
-                     // self.render_graphic2(y as usize);
+                DisplayMode::Graphic2 => {
+                    // screen 2
+                    self.render_graphic2(y as usize);
+                    
                 }
                 // DisplayMode::Multicolor => { // screen 3
                 //     self.render_text2(y as usize, fg, bg);
@@ -119,6 +121,44 @@ impl<'a> Renderer<'a> {
             for i in 0..8 {
                 let mask = 0x80 >> i;
                 self.screen_buffer[pixel_ptr + i] = if (pattern & mask) != 0 { fg } else { bg };
+            }
+
+            pixel_ptr += 8;
+        }
+    }
+
+    // New function to handle Screen 2 (Graphics Mode 2) rendering
+    pub fn render_graphic2(&mut self, line: usize) {
+        // Screen 2 specific configurations
+        let name_table_base = 0x1800;
+        let color_table_base = 0x2000;
+        let pattern_table_base = 0x0000;
+
+        let name_table = &self.vdp.vram[name_table_base..(name_table_base + 0x300)];
+        let color_table = &self.vdp.vram[color_table_base..(color_table_base + 0x1800)];
+        let pattern_table = &self.vdp.vram[pattern_table_base..(pattern_table_base + 0x1800)];
+
+        let pattern_row = line % 8;
+        let name_row = (line / 8) * 32;
+        let mut pixel_ptr = line * 256;
+
+        for x in 0..32 {
+            let name_index = name_row + x;
+            let char_code = name_table[name_index];
+            let pattern_index = (char_code as usize * 8) + pattern_row;
+            let pattern = pattern_table[pattern_index];
+
+            let color_index = ((char_code as usize / 8) * 8) + pattern_row;
+            let color = color_table[color_index];
+            let fg = (color >> 4) & 0x0F;
+            let bg = color & 0x0F;
+
+            for i in 0..8 {
+                let mask = 0x80 >> i;
+                let pixel_index = pixel_ptr + i;
+                if pixel_index < self.screen_buffer.len() {
+                    self.screen_buffer[pixel_index] = if (pattern & mask) != 0 { fg } else { bg };
+                }
             }
 
             pixel_ptr += 8;

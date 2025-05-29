@@ -4,9 +4,9 @@ pub mod internal_state;
 pub mod keyboard;
 pub mod machine;
 pub mod ppi;
+pub mod psg;
 pub mod renderer;
 pub mod slot;
-pub mod sound;
 pub mod utils;
 pub mod vdp;
 
