@@ -60,7 +60,6 @@ impl<'a> Renderer<'a> {
                 DisplayMode::Graphic2 => {
                     // screen 2
                     self.render_graphic2(y as usize);
-                    
                 }
                 // DisplayMode::Multicolor => { // screen 3
                 //     self.render_text2(y as usize, fg, bg);
@@ -70,30 +69,57 @@ impl<'a> Renderer<'a> {
         }
     }
 
+    // In render_text1, after the main character rendering loop for a line:
+    // let mut pixel_ptr has advanced by 240 at this point for the current line.
+    // Let's rename pixel_ptr inside the loop to avoid confusion, or track current_x.
+
     pub fn render_text1(&mut self, line: usize) {
-        let fg = self.vdp.registers[7] & 0xF0;
-        let bg = self.vdp.registers[7] & 0x0F;
+        let r7 = self.vdp.registers[7];
+        let fg_color = (r7 & 0xF0) >> 4; // Corrected foreground
+        let bg_and_border_color = r7 & 0x0F; // Background and Border for Text1
 
         let caracter_pattern_area = self.vdp.char_pattern_table();
         let l = (line + self.vdp.get_vertical_scroll()) & 7;
 
-        // Calculate the base address of the PNT using register R#2
         let pnt_base = (self.vdp.registers[2] as usize & 0x0F) * 0x0400;
+        let name_start_for_row = (line / 8) * 40; // Starting character index in PNT for this row
 
-        let name_start = (line / 8) * 40;
-        let name_end = name_start + 40;
-        let mut pixel_ptr = line * 256;
-        for name in name_start..name_end {
-            let screen_offset = pnt_base + name; // Calculate the proper offset in the VRAM
-            let char_code = self.vdp.vram[screen_offset]; // Get the value directly from the VRAM array
-            let pattern = caracter_pattern_area[l + char_code as usize * 8];
+        let mut current_x_on_scanline = 0;
 
-            for i in 0..6 {
-                let mask = 0x80 >> i;
-                self.screen_buffer[pixel_ptr + i] = if (pattern & mask) != 0 { fg } else { bg };
+        // Render 40 characters (240 pixels)
+        for char_column_idx in 0..40 {
+            // It's safer to calculate full VRAM addresses and screen buffer indices
+            // to avoid off-by-one errors with `pixel_ptr` logic.
+            let char_code_vram_addr = pnt_base + name_start_for_row + char_column_idx;
+            // Add bounds check for VRAM access if necessary
+            let char_code = self.vdp.vram[char_code_vram_addr % self.vdp.vram.len()]; // Modulo for safety for now
+
+            let pattern_offset_in_cpt = (char_code as usize * 8) + l;
+            // Add bounds check for CPT access if necessary
+            let pattern =
+                caracter_pattern_area[pattern_offset_in_cpt % caracter_pattern_area.len()]; // Modulo for safety
+
+            for bit_idx in 0..6 {
+                // 6 pixels per character
+                let screen_buffer_idx = (line * 256) + current_x_on_scanline + bit_idx;
+                if screen_buffer_idx < self.screen_buffer.len() {
+                    self.screen_buffer[screen_buffer_idx] = if (pattern & (0x80 >> bit_idx)) != 0 {
+                        fg_color
+                    } else {
+                        bg_and_border_color // Text background
+                    };
+                }
             }
+            current_x_on_scanline += 6;
+        }
 
-            pixel_ptr += 6;
+        // current_x_on_scanline is now 240.
+        // Fill the remaining 16 pixels on the right with the border color.
+        for i in 0..16 {
+            let screen_buffer_idx = (line * 256) + current_x_on_scanline + i;
+            if screen_buffer_idx < self.screen_buffer.len() {
+                self.screen_buffer[screen_buffer_idx] = bg_and_border_color; // Border
+            }
         }
     }
 

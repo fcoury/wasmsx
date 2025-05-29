@@ -15,9 +15,22 @@ import ROMS from "./roms.js";
 
 const PROCESSOR_RATE = 3.579 * 1000 * 1000;
 const PALETTE = [
-  0x000000, 0x010101, 0x3eb849, 0x74d07d, 0x5955e0, 0x8076f1, 0xb95e51,
-  0x65dbef, 0xdb6559, 0xff897d, 0xccc35e, 0xded087, 0x3aa241, 0xb766b5,
-  0xcccccc, 0xffffff,
+  0x000000,
+  0x010101,
+  0x3eb849,
+  0x74d07d,
+  0x5955e0,
+  0x8076f1,
+  0xb95e51,
+  0x65dbef,
+  0xdb6559,
+  0xff897d,
+  0xccc35e,
+  0xded087,
+  0x3aa241,
+  0xb766b5,
+  0xcccccc,
+  0xffffff,
 ];
 
 class Renderer {
@@ -188,7 +201,7 @@ class Emulator {
 
   /**
    * Renders div with PC and display mode.
-   **/
+   */
   public renderState() {
     const { pc, displayMode } = this.machine;
 
@@ -226,9 +239,11 @@ class Emulator {
       rows.push(addr + ":  " + row.join(" ") + "  " + chars.join(""));
     }
 
-    this.vram.innerHTML = `<pre>${rows
-      .map((row) => `<div>${row}</div>`)
-      .join("")}</pre>`;
+    this.vram.innerHTML = `<pre>${
+      rows
+        .map((row) => `<div>${row}</div>`)
+        .join("")
+    }</pre>`;
   }
 
   /**
@@ -257,7 +272,7 @@ class Emulator {
 }
 
 function main() {
-  const machine = new Machine(ROMS.expert);
+  const machine = new Machine(ROMS.hotbit);
   const emulator = new Emulator(machine);
   const renderer = new Renderer({ width: 256, height: 192 });
   const app = new App(renderer, emulator);
