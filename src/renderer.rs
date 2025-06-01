@@ -155,26 +155,28 @@ impl<'a> Renderer<'a> {
 
     // New function to handle Screen 2 (Graphics Mode 2) rendering
     pub fn render_graphic2(&mut self, line: usize) {
-        // Screen 2 specific configurations
-        let name_table_base = 0x1800;
-        let color_table_base = 0x2000;
-        let pattern_table_base = 0x0000;
-
-        let name_table = &self.vdp.vram[name_table_base..(name_table_base + 0x300)];
-        let color_table = &self.vdp.vram[color_table_base..(color_table_base + 0x1800)];
-        let pattern_table = &self.vdp.vram[pattern_table_base..(pattern_table_base + 0x1800)];
+        // Get table base addresses from VDP registers
+        let (name_table_base, _) = self.vdp.name_table_base_and_size();
+        let pattern_table = self.vdp.char_pattern_table();
+        let color_table = self.vdp.color_table();
 
         let pattern_row = line % 8;
         let name_row = (line / 8) * 32;
         let mut pixel_ptr = line * 256;
 
+        // Screen 2 divides the screen into 3 banks of 8 rows each
+        let bank = (line / 64) & 0x03;
+
         for x in 0..32 {
             let name_index = name_row + x;
-            let char_code = name_table[name_index];
-            let pattern_index = (char_code as usize * 8) + pattern_row;
+            let char_code = self.vdp.vram[name_table_base + name_index];
+            
+            // In screen 2, pattern and color tables are divided into 3 banks
+            let pattern_index = (bank * 2048) + (char_code as usize * 8) + pattern_row;
             let pattern = pattern_table[pattern_index];
 
-            let color_index = ((char_code as usize / 8) * 8) + pattern_row;
+            // Color table has same structure as pattern table in screen 2
+            let color_index = (bank * 2048) + (char_code as usize * 8) + pattern_row;
             let color = color_table[color_index];
             let fg = (color >> 4) & 0x0F;
             let bg = color & 0x0F;

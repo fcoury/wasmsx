@@ -203,10 +203,16 @@ impl TMS9918 {
     // }
 
     pub fn char_pattern_table(&self) -> &[u8] {
+        // Calculate base address from register 4
         let base_address = match self.display_mode {
-            DisplayMode::Text1 => 0x0800,
-            DisplayMode::Graphic1 => 0x0000,
-            DisplayMode::Graphic2 => 0x0000,
+            DisplayMode::Text1 => {
+                // In Text Mode, R#4 bits 2-0 define the pattern table base
+                (self.registers[4] as usize & 0x07) * 0x800
+            }
+            DisplayMode::Graphic1 | DisplayMode::Graphic2 => {
+                // In Graphics modes, only bit 2 of R#4 is effective (0x0000 or 0x2000)
+                ((self.registers[4] as usize) & 0x04) << 11
+            }
             DisplayMode::Multicolor => 0x0000,
         };
 
@@ -251,16 +257,24 @@ impl TMS9918 {
 
     pub fn color_table(&self) -> &[u8] {
         // Calculate the base address of the color table using register R#3
-        // let ct_base = (self.registers[3] as usize & 0x7F) * 0x040;
-        // info!("[VDP] calculated color table base_address: {:04X}", ct_base);
-        // info!(
-        //     "[VDP] set color table base_address: {:04X}",
-        //     self.color_table_address
-        // );
-        // let ct_base = self.color_table_address as usize;
-        let ct_base = 0x2000;
-        let ct_table_size = 6 * 1027; // 6k
-                                      // tracing::info!("color table base_address: {:04X}", ct_base);
+        let ct_base = match self.display_mode {
+            DisplayMode::Graphic1 => {
+                // In Graphics Mode 1, only bit 7 of R#3 is effective (0x0000 or 0x2000)
+                ((self.registers[3] as usize) & 0x80) << 6
+            }
+            DisplayMode::Graphic2 => {
+                // In Graphics Mode 2, bits 0-6 must be 1, bit 7 determines base
+                ((self.registers[3] as usize) & 0x80) << 6
+            }
+            _ => 0x2000, // Default for other modes
+        };
+        
+        let ct_table_size = match self.display_mode {
+            DisplayMode::Graphic1 => 32,      // 32 bytes in Graphics Mode 1
+            DisplayMode::Graphic2 => 0x1800,  // 6KB in Graphics Mode 2
+            _ => 32,
+        };
+        
         &self.vram[ct_base..(ct_base + ct_table_size)]
     }
 
