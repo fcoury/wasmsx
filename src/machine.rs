@@ -4,6 +4,7 @@ use z80::{Z80_io, Z80};
 
 use crate::{
     bus::{Bus, MemorySegment},
+    fdc::DiskImage,
     partial_hexdump,
     slot::{RamSlot, RomSlot, SlotType},
     vdp::TMS9918,
@@ -139,6 +140,22 @@ impl Machine {
     pub fn memory_segments(&self) -> Vec<MemorySegment> {
         self.bus.borrow().memory_segments()
     }
+    
+    pub fn enable_disk_system(&mut self) {
+        self.bus.borrow_mut().enable_fdc();
+    }
+    
+    pub fn insert_disk(&mut self, drive: usize, image: DiskImage) {
+        if let Some(fdc) = &mut self.bus.borrow_mut().fdc {
+            fdc.insert_disk(drive, image);
+        }
+    }
+    
+    pub fn eject_disk(&mut self, drive: usize) {
+        if let Some(fdc) = &mut self.bus.borrow_mut().fdc {
+            fdc.eject_disk(drive);
+        }
+    }
 }
 
 impl Default for Machine {
@@ -170,6 +187,7 @@ impl Default for Machine {
 #[derive(Default)]
 pub struct MachineBuilder {
     slots: Vec<SlotType>,
+    enable_disk: bool,
 }
 
 impl MachineBuilder {
@@ -193,8 +211,17 @@ impl MachineBuilder {
         self
     }
 
+    pub fn with_disk_support(&mut self) -> &mut Self {
+        self.enable_disk = true;
+        self
+    }
+    
     pub fn build(&self) -> Machine {
-        Machine::new(&self.slots)
+        let mut machine = Machine::new(&self.slots);
+        if self.enable_disk {
+            machine.enable_disk_system();
+        }
+        machine
     }
 }
 

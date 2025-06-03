@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::wasm_bindgen;
 use z80::Z80_io;
 
-use super::{ppi::Ppi, psg::AY38910, vdp::TMS9918};
+use super::{fdc::WD2793, ppi::Ppi, psg::AY38910, vdp::TMS9918};
 use crate::{
     machine::Message,
     slot::{RamSlot, RomSlot, SlotType},
@@ -15,6 +15,7 @@ pub struct Bus {
     pub vdp: TMS9918,
     pub psg: AY38910,
     pub ppi: Ppi,
+    pub fdc: Option<WD2793>,
 
     slots: [SlotType; 4],
 }
@@ -25,6 +26,7 @@ impl Bus {
             vdp: TMS9918::new(queue),
             psg: AY38910::new(),
             ppi: Ppi::new(),
+            fdc: None,  // FDC is optional, can be enabled later
             slots: [
                 slots.get(0).unwrap().clone(),
                 slots.get(1).unwrap().clone(),
@@ -50,6 +52,13 @@ impl Bus {
         self.vdp.reset();
         self.psg.reset();
         self.ppi.reset();
+        if let Some(fdc) = &mut self.fdc {
+            fdc.reset();
+        }
+    }
+    
+    pub fn enable_fdc(&mut self) {
+        self.fdc = Some(WD2793::new());
     }
 
     pub fn input(&mut self, port: u8) -> u8 {
@@ -57,6 +66,13 @@ impl Bus {
             0x98 | 0x99 => self.vdp.read(port),
             0xA0 | 0xA1 => self.psg.read(port),
             0xA8 | 0xA9 | 0xAA | 0xAB => self.ppi.read(port),
+            0x7C..=0x7F => {
+                if let Some(fdc) = &mut self.fdc {
+                    fdc.read(port)
+                } else {
+                    0xFF
+                }
+            }
             _ => {
                 tracing::trace!("[BUS] Invalid port {:02X} read", port);
                 0xff
@@ -69,6 +85,17 @@ impl Bus {
             0x98 | 0x99 => self.vdp.write(port, data),
             0xA0 | 0xA1 => self.psg.write(port, data),
             0xA8 | 0xA9 | 0xAA | 0xAB => self.ppi.write(port, data),
+            0x7C..=0x7F => {
+                if let Some(fdc) = &mut self.fdc {
+                    fdc.write(port, data);
+                }
+            }
+            0xFB => {
+                // Drive control port (0x7FFB mirrored to 0xFB in 8-bit I/O space)
+                if let Some(fdc) = &mut self.fdc {
+                    fdc.drive_control(data);
+                }
+            }
             _ => {
                 tracing::trace!("[BUS] Invalid port {:02X} write", port);
             }

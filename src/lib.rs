@@ -1,4 +1,5 @@
 pub mod bus;
+pub mod fdc;
 pub mod instruction;
 pub mod internal_state;
 pub mod keyboard;
@@ -10,6 +11,7 @@ pub mod slot;
 pub mod utils;
 pub mod vdp;
 
+pub use fdc::{DiskFormat, DiskImage, WD2793};
 pub use internal_state::{InternalState, ReportState};
 pub use machine::MachineBuilder;
 pub use machine::{Machine, ProgramEntry};
@@ -85,5 +87,21 @@ impl JsMachine {
     #[wasm_bindgen(js_name=keyUp)]
     pub fn key_up(&mut self, key: String) {
         self.0.bus.borrow_mut().key_up(key);
+    }
+    
+    #[wasm_bindgen(js_name=enableDiskSystem)]
+    pub fn enable_disk_system(&mut self) {
+        self.0.enable_disk_system();
+    }
+    
+    #[wasm_bindgen(js_name=insertDisk)]
+    pub fn insert_disk(&mut self, drive: usize, data: &[u8], filename: &str) {
+        let disk_image = DiskImage::from_file(data.to_vec(), filename);
+        self.0.insert_disk(drive, disk_image);
+    }
+    
+    #[wasm_bindgen(js_name=ejectDisk)]
+    pub fn eject_disk(&mut self, drive: usize) {
+        self.0.eject_disk(drive);
     }
 }
