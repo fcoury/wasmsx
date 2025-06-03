@@ -70,11 +70,12 @@ pub struct RomSlot {
 impl RomSlot {
     pub fn new(rom: &[u8], base: u16, size: u32) -> Self {
         let mut data = vec![0xFF; size as usize];
-        data[0..rom.len()].copy_from_slice(rom);
+        
+        // Copy the ROM data, but don't exceed the ROM size
+        let copy_size = rom.len().min(size as usize);
+        data[0..copy_size].copy_from_slice(&rom[0..copy_size]);
 
-        if rom.len() < size as usize {
-            data[rom.len()..].copy_from_slice(&rom[0..(size as usize - rom.len())]);
-        }
+        // The rest of the slot remains filled with 0xFF (default value)
 
         RomSlot {
             base,

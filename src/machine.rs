@@ -20,6 +20,7 @@ pub struct Machine {
 
 impl Machine {
     pub fn new(slots: &[SlotType]) -> Self {
+        tracing::info!("Initializing MSX with slots: {:?}", slots);
         let queue = Rc::new(RefCell::new(VecDeque::new()));
         let bus = Rc::new(RefCell::new(Bus::new(slots, queue.clone())));
         let io = Io::new(bus.clone());
@@ -140,17 +141,17 @@ impl Machine {
     pub fn memory_segments(&self) -> Vec<MemorySegment> {
         self.bus.borrow().memory_segments()
     }
-    
+
     pub fn enable_disk_system(&mut self) {
         self.bus.borrow_mut().enable_fdc();
     }
-    
+
     pub fn insert_disk(&mut self, drive: usize, image: DiskImage) {
         if let Some(fdc) = &mut self.bus.borrow_mut().fdc {
             fdc.insert_disk(drive, image);
         }
     }
-    
+
     pub fn eject_disk(&mut self, drive: usize) {
         if let Some(fdc) = &mut self.bus.borrow_mut().fdc {
             fdc.eject_disk(drive);
@@ -215,8 +216,15 @@ impl MachineBuilder {
         self.enable_disk = true;
         self
     }
-    
+
     pub fn build(&self) -> Machine {
+        if self.slots.len() != 4 {
+            panic!(
+                "MachineBuilder: Expected exactly 4 slots, but got {}",
+                self.slots.len()
+            );
+        }
+
         let mut machine = Machine::new(&self.slots);
         if self.enable_disk {
             machine.enable_disk_system();

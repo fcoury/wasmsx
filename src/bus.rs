@@ -22,16 +22,20 @@ pub struct Bus {
 
 impl Bus {
     pub fn new(slots: &[SlotType], queue: Rc<RefCell<VecDeque<Message>>>) -> Self {
+        if slots.len() != 4 {
+            panic!("Bus requires exactly 4 slots, got {}", slots.len());
+        }
+        
         Self {
             vdp: TMS9918::new(queue),
             psg: AY38910::new(),
             ppi: Ppi::new(),
             fdc: None,  // FDC is optional, can be enabled later
             slots: [
-                slots.get(0).unwrap().clone(),
-                slots.get(1).unwrap().clone(),
-                slots.get(2).unwrap().clone(),
-                slots.get(3).unwrap().clone(),
+                slots[0].clone(),
+                slots[1].clone(),
+                slots[2].clone(),
+                slots[3].clone(),
             ],
         }
     }

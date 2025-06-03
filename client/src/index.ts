@@ -12,6 +12,7 @@
 
 import init, { Machine } from "../pkg/wasmsx.js";
 import ROMS from "./roms.js";
+import { SystemManager } from "./diskrom.js";
 
 const PROCESSOR_RATE = 3.579 * 1000 * 1000;
 const PALETTE = [
@@ -286,17 +287,19 @@ class DiskController {
     for (let drive = 0; drive < 2; drive++) {
       const mountButton = document.getElementById(`drive-${drive}-mount`);
       const ejectButton = document.getElementById(`drive-${drive}-eject`);
-      const fileInput = document.getElementById(`drive-${drive}-file`) as HTMLInputElement;
+      const fileInput = document.getElementById(
+        `drive-${drive}-file`,
+      ) as HTMLInputElement;
 
-      mountButton?.addEventListener('click', () => {
+      mountButton?.addEventListener("click", () => {
         fileInput.click();
       });
 
-      ejectButton?.addEventListener('click', () => {
+      ejectButton?.addEventListener("click", () => {
         this.ejectDisk(drive);
       });
 
-      fileInput?.addEventListener('change', (event) => {
+      fileInput?.addEventListener("change", (event) => {
         const file = (event.target as HTMLInputElement).files?.[0];
         if (file) {
           this.mountDisk(drive, file);
@@ -339,30 +342,52 @@ class DiskController {
 
   private updateDriveStatus(drive: number, filename: string | null) {
     const statusElement = document.getElementById(`drive-${drive}-status`);
-    const ejectButton = document.getElementById(`drive-${drive}-eject`) as HTMLButtonElement;
+    const ejectButton = document.getElementById(
+      `drive-${drive}-eject`,
+    ) as HTMLButtonElement;
 
     if (statusElement && ejectButton) {
       if (filename) {
         statusElement.textContent = filename;
-        statusElement.classList.add('mounted');
+        statusElement.classList.add("mounted");
         ejectButton.disabled = false;
       } else {
-        statusElement.textContent = 'Empty';
-        statusElement.classList.remove('mounted');
+        statusElement.textContent = "Empty";
+        statusElement.classList.remove("mounted");
         ejectButton.disabled = true;
       }
     }
   }
 }
 
-function main() {
-  const machine = new Machine(ROMS.hotbit);
+let currentApp: App | null = null;
+let currentEmulator: Emulator | null = null;
+let currentDiskController: DiskController | null = null;
+let animationId: number | null = null;
+
+function setupMachine(machine: Machine) {
+  // Cancel any existing animation frame
+  if (animationId !== null) {
+    cancelAnimationFrame(animationId);
+  }
+
+  // Create new instances
   const emulator = new Emulator(machine);
   const renderer = new Renderer({ width: 256, height: 192 });
   const app = new App(renderer, emulator);
   const diskController = new DiskController(machine);
+  
+  // Store references
+  currentApp = app;
+  currentEmulator = emulator;
+  currentDiskController = diskController;
+  
   let lastTime = Date.now();
 
+  // Note: Event listeners will accumulate, but this is okay for our use case
+  // since we're restarting the entire machine
+
+  // Add new event listeners
   window.addEventListener("keydown", (e) => {
     if (app.keyDown(e.code)) {
       if (emulator.isRunning()) {
@@ -390,11 +415,25 @@ function main() {
     app.frame(dt);
 
     if (emulator.isRunning()) {
-      requestAnimationFrame(frame);
+      animationId = requestAnimationFrame(frame);
     }
   };
 
-  requestAnimationFrame(frame);
+  animationId = requestAnimationFrame(frame);
+}
+
+function main() {
+  // Initialize with BIOS ROM
+  const systemManager = SystemManager.getInstance(ROMS.expert);
+  
+  // Set up machine restart callback
+  systemManager.setOnMachineRestart((machine) => {
+    console.log("Machine restarted with new configuration");
+    setupMachine(machine);
+  });
+  
+  // Initial setup
+  setupMachine(systemManager.getMachine());
 }
 
 function onLoad() {
