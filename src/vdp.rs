@@ -20,7 +20,7 @@ pub struct TMS9918 {
     pub first_write: Option<u8>,
     // #[serde(with = "BigArray")]
     pub screen_buffer: [u8; 256 * 192],
-    pub sprites: [Sprite; 8],
+    pub sprites: [Sprite; 32],
     pub frame: u8,
     pub line: u8,
     pub vblank: bool,
@@ -30,6 +30,7 @@ pub struct TMS9918 {
     pub sprites_collided: bool,
     pub sprites_invalid: Option<u8>,
     pub sprites_max_computed: u8,
+    pub sprites_visible: Vec<Vec<usize>>, // Visible sprites per scanline
 
     pub blink_page_duration: u8,
     pub blink_per_line: bool,
@@ -59,12 +60,12 @@ impl TMS9918 {
             first_write: None,
             screen_buffer: [0; 256 * 192],
             sprites: [Sprite {
+                y: 0xD0,  // Initialize with end-of-list marker
                 x: 0,
-                y: 0,
                 pattern: 0,
                 color: 0,
                 collision: false,
-            }; 8],
+            }; 32],
             frame: 0,
             line: 0,
             vblank: false,
@@ -76,6 +77,7 @@ impl TMS9918 {
             sprites_collided: false,
             sprites_invalid: None,
             sprites_max_computed: 0,
+            sprites_visible: vec![Vec::new(); 192],
 
             blink_per_line: false,
             blink_even_page: false,
@@ -105,12 +107,12 @@ impl TMS9918 {
             first_write: None,
             screen_buffer: [0; 256 * 192],
             sprites: [Sprite {
+                y: 0xD0,  // Initialize with end-of-list marker
                 x: 0,
-                y: 0,
                 pattern: 0,
                 color: 0,
                 collision: false,
-            }; 8],
+            }; 32],
             frame: 0,
             line: 0,
             vblank: false,
@@ -122,6 +124,7 @@ impl TMS9918 {
             sprites_collided: false,
             sprites_invalid: None,
             sprites_max_computed: 0,
+            sprites_visible: vec![Vec::new(); 192],
 
             blink_per_line: false,
             blink_even_page: false,
@@ -149,12 +152,12 @@ impl TMS9918 {
         self.first_write = None;
         self.screen_buffer = [0; 256 * 192];
         self.sprites = [Sprite {
+            y: 0xD0,  // Initialize with end-of-list marker
             x: 0,
-            y: 0,
             pattern: 0,
             color: 0,
             collision: false,
-        }; 8];
+        }; 32];
         self.frame = 0;
         self.line = 0;
         self.vblank = false;
@@ -164,6 +167,7 @@ impl TMS9918 {
         self.sprites_collided = false;
         self.sprites_invalid = None;
         self.sprites_max_computed = 0;
+        self.sprites_visible = vec![Vec::new(); 192];
 
         self.update_blinking();
         // self.update_color_table_address(); // Called when R3/R10 is written
@@ -237,6 +241,201 @@ impl TMS9918 {
 
     pub fn get_vertical_scroll(&self) -> usize {
         0
+    }
+
+    pub fn sprite_attribute_table_address(&self) -> u16 {
+        // Sprite Attribute Table address from register 5
+        ((self.registers[5] & 0x7F) as u16) << 7
+    }
+
+    pub fn sprite_pattern_table_address(&self) -> u16 {
+        // Sprite Pattern Table address from register 6
+        ((self.registers[6] & 0x07) as u16) << 11
+    }
+
+    pub fn sprite_size(&self) -> u8 {
+        // Bit 1 of register 1: 0 = 8x8, 1 = 16x16
+        if self.registers[1] & 0x02 != 0 { 16 } else { 8 }
+    }
+
+    pub fn sprite_magnification(&self) -> u8 {
+        // Bit 0 of register 1: 0 = 1x, 1 = 2x
+        if self.registers[1] & 0x01 != 0 { 2 } else { 1 }
+    }
+
+    pub fn load_sprites_from_sat(&mut self) {
+        let sat_addr = self.sprite_attribute_table_address() as usize;
+        
+        // Load sprite data from Sprite Attribute Table
+        for i in 0..32 {
+            let sprite_addr = sat_addr + (i * 4);
+            
+            // Read sprite attributes from VRAM
+            let y = self.vram[sprite_addr];
+            let x = self.vram[sprite_addr + 1];
+            let pattern = self.vram[sprite_addr + 2];
+            let color = self.vram[sprite_addr + 3];
+            
+            self.sprites[i] = Sprite {
+                y,
+                x,
+                pattern,
+                color,
+                collision: false,
+            };
+            
+            // Check for end-of-sprite marker
+            if y == 0xD0 || y == 0xD8 {
+                // Mark remaining sprites as inactive
+                for j in (i + 1)..32 {
+                    self.sprites[j].y = 0xD0;
+                }
+                break;
+            }
+        }
+    }
+
+    pub fn evaluate_all_sprite_lines(&mut self) {
+        // Clear previous visibility data
+        for line_sprites in &mut self.sprites_visible {
+            line_sprites.clear();
+        }
+        
+        // Clear sprite flags
+        self.sprites_invalid = None;
+        self.status &= !0x40; // Clear 5S flag
+        
+        // Evaluate sprites for each scanline
+        for line in 0..192 {
+            let visible = self.evaluate_sprites_on_line(line as u8);
+            self.sprites_visible[line] = visible;
+        }
+    }
+
+    pub fn evaluate_sprites_on_line(&mut self, line: u8) -> Vec<usize> {
+        let mut visible_sprites = Vec::new();
+        let sprite_size = self.sprite_size();
+        let magnification = self.sprite_magnification();
+        let actual_size = sprite_size * magnification;
+        
+        // First, load current sprite data from SAT
+        self.load_sprites_from_sat();
+        
+        // Check each sprite to see if it's visible on this line
+        for i in 0..32 {
+            let sprite = &self.sprites[i];
+            
+            // Check for end-of-sprite marker
+            if sprite.y == 0xD0 || sprite.y == 0xD8 {
+                break;
+            }
+            
+            // Y coordinate in sprite table is actually Y + 1
+            let sprite_y = sprite.y.wrapping_sub(1);
+            
+            // Check if sprite is visible on this line
+            if line >= sprite_y && line < sprite_y.wrapping_add(actual_size) {
+                visible_sprites.push(i);
+                
+                // Check for 5th sprite on line
+                if visible_sprites.len() > 4 {
+                    // Set 5th sprite flag and number
+                    self.sprites_invalid = Some(i as u8);
+                    self.status |= 0x40; // Set 5S flag
+                    break; // Stop processing more sprites
+                }
+            }
+        }
+        
+        visible_sprites
+    }
+
+    pub fn render_sprites_on_line(&self, line: usize, screen_buffer: &mut [u8], visible_sprites: &[usize]) {
+        let sprite_size = self.sprite_size();
+        let magnification = self.sprite_magnification();
+        let spt_addr = self.sprite_pattern_table_address() as usize;
+        
+        // Render sprites in reverse order (sprite 0 has highest priority)
+        for &sprite_idx in visible_sprites.iter().take(4).rev() {
+            let sprite = &self.sprites[sprite_idx];
+            
+            // Skip end-of-sprite markers
+            if sprite.y == 0xD0 || sprite.y == 0xD8 {
+                continue;
+            }
+            
+            // Calculate sprite position
+            let sprite_y = sprite.y.wrapping_sub(1) as usize;
+            let mut sprite_x = sprite.x as usize;
+            
+            // Handle Early Clock bit
+            if sprite.color & 0x80 != 0 {
+                sprite_x = sprite_x.wrapping_sub(32);
+            }
+            
+            // Get sprite color (bits 0-3)
+            let sprite_color = sprite.color & 0x0F;
+            
+            // Skip transparent sprites
+            if sprite_color == 0 {
+                continue;
+            }
+            
+            // Calculate which line of the sprite we're rendering
+            let sprite_line = (line - sprite_y) / magnification as usize;
+            
+            // Get sprite pattern data
+            let pattern_offset = if sprite_size == 16 {
+                // 16x16 sprites use 32 bytes
+                (sprite.pattern as usize & 0xFC) * 8 + sprite_line
+            } else {
+                // 8x8 sprites use 8 bytes
+                sprite.pattern as usize * 8 + sprite_line
+            };
+            
+            let pattern_data = self.vram[spt_addr + pattern_offset];
+            
+            // Render sprite pixels
+            for bit in 0..8 {
+                let pixel_set = (pattern_data & (0x80 >> bit)) != 0;
+                
+                if pixel_set {
+                    // Calculate screen position with magnification
+                    for mag_x in 0..magnification {
+                        let x = sprite_x + (bit * magnification as usize) + mag_x as usize;
+                        
+                        if x < 256 {
+                            let buffer_idx = line * 256 + x;
+                            if buffer_idx < screen_buffer.len() {
+                                screen_buffer[buffer_idx] = sprite_color;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // For 16x16 sprites, render the second half
+            if sprite_size == 16 && sprite_line < 8 {
+                let pattern_data_2 = self.vram[spt_addr + pattern_offset + 16];
+                
+                for bit in 0..8 {
+                    let pixel_set = (pattern_data_2 & (0x80 >> bit)) != 0;
+                    
+                    if pixel_set {
+                        for mag_x in 0..magnification {
+                            let x = sprite_x + ((bit + 8) * magnification as usize) + mag_x as usize;
+                            
+                            if x < 256 {
+                                let buffer_idx = line * 256 + x;
+                                if buffer_idx < screen_buffer.len() {
+                                    screen_buffer[buffer_idx] = sprite_color;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fn read98(&mut self) -> u8 {
@@ -703,11 +902,11 @@ impl ModeData {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Sprite {
-    pub x: u8,
-    pub y: u8,
-    pub pattern: u32,
-    pub color: u8,
-    pub collision: bool,
+    pub y: u8,           // Y position (0xD0 = end of sprite list)
+    pub x: u8,           // X position
+    pub pattern: u8,     // Pattern number
+    pub color: u8,       // Bits 0-3: color, Bit 7: Early Clock
+    pub collision: bool, // For collision detection tracking
 }
 
 enum ColorTablePart {

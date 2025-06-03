@@ -163,6 +163,7 @@ impl JsMachine {
     pub fn screen(&self) -> Vec<u8> {
         let mut bus = self.0.bus.borrow_mut();
         bus.vdp.pulse();
+        bus.vdp.evaluate_all_sprite_lines();
         let mut renderer = Renderer::new(&bus.vdp);
         renderer.draw();
         renderer.screen_buffer.to_vec()

@@ -151,6 +151,12 @@ impl<'a> Renderer<'a> {
 
             pixel_ptr += 8;
         }
+
+        // Render sprites on this line
+        if line < self.vdp.sprites_visible.len() {
+            let visible_sprites = &self.vdp.sprites_visible[line];
+            self.vdp.render_sprites_on_line(line, &mut self.screen_buffer, visible_sprites);
+        }
     }
 
     // New function to handle Screen 2 (Graphics Mode 2) rendering
@@ -190,6 +196,12 @@ impl<'a> Renderer<'a> {
             }
 
             pixel_ptr += 8;
+        }
+
+        // Render sprites on this line
+        if line < self.vdp.sprites_visible.len() {
+            let visible_sprites = &self.vdp.sprites_visible[line];
+            self.vdp.render_sprites_on_line(line, &mut self.screen_buffer, visible_sprites);
         }
     }
 }
