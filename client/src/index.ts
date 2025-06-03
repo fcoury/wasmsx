@@ -13,9 +13,17 @@
 import init, { Machine } from "../pkg/wasmsx.js";
 import ROMS from "./roms.js";
 import { SystemManager } from "./diskrom.js";
-import { BIOS_OPTIONS, getBiosById, setCustomRom, hasCustomRom } from "./bios.js";
+import {
+  BIOS_OPTIONS,
+  getBiosById,
+  hasCustomRom,
+  setCustomRom,
+} from "./bios.js";
 
 const PROCESSOR_RATE = 3.579 * 1000 * 1000;
+const AUDIO_SAMPLE_RATE = 44100;
+const AUDIO_BUFFER_SIZE = 2048;
+
 const PALETTE = [
   0x000000,
   0x010101,
@@ -136,9 +144,9 @@ class App {
   public frame(dt: number) {
     // Cap delta time to prevent spiral of death
     const cappedDt = Math.min(dt, 0.1); // Cap at 100ms (10 FPS minimum)
-    
+
     this.emulator.run(cappedDt);
-    
+
     // Always render for now to debug the issue
     this.renderer.renderScreen(this.emulator.getScreen());
     if (this.debugVisible) {
@@ -156,6 +164,9 @@ class Emulator {
   private frameTime: number;
   private frameAccumulator: number;
   private timeBudget: number;
+  private audioContext: AudioContext | null;
+  private audioProcessor: ScriptProcessorNode | null;
+  private audioEnabled: boolean;
 
   /**
    * Constructs a new Emulator instance.
@@ -169,6 +180,20 @@ class Emulator {
     this.timeBudget = 0;
     this.vram = document.getElementById("vram") as HTMLDivElement;
     this.state = document.getElementById("state") as HTMLDivElement;
+    this.audioContext = null;
+    this.audioProcessor = null;
+    this.audioEnabled = true;
+
+    // Initialize audio on first user interaction
+    const initAudio = () => {
+      if (!this.audioContext) {
+        this.initAudio();
+        document.removeEventListener("click", initAudio);
+        document.removeEventListener("keydown", initAudio);
+      }
+    };
+    document.addEventListener("click", initAudio);
+    document.addEventListener("keydown", initAudio);
   }
 
   /**
@@ -181,7 +206,7 @@ class Emulator {
     const cycles = Math.floor(this.timeBudget * PROCESSOR_RATE);
     const cycleTime = cycles / PROCESSOR_RATE;
     this.timeBudget -= cycleTime;
-    
+
     // Step the machine for the calculated cycles
     if (cycles > 0) {
       this.machine.step_for(cycles);
@@ -210,7 +235,7 @@ class Emulator {
   public getScreen(): Uint8Array {
     return this.machine.screen();
   }
-  
+
   /**
    * Returns whether a complete frame is ready to render.
    * @returns {boolean} Whether a frame is ready
@@ -288,6 +313,79 @@ class Emulator {
     }
 
     return false;
+  }
+
+  /**
+   * Initializes the Web Audio API for sound output.
+   */
+  private initAudio() {
+    try {
+      this.audioContext = new AudioContext({ sampleRate: AUDIO_SAMPLE_RATE });
+
+      // Create a script processor for audio generation
+      this.audioProcessor = this.audioContext.createScriptProcessor(
+        AUDIO_BUFFER_SIZE,
+        0, // no input channels
+        1, // mono output
+      );
+
+      // Connect to speakers
+      this.audioProcessor.connect(this.audioContext.destination);
+      this.audioEnabled = true;
+
+      console.log("Audio initialized successfully (enabled by default)");
+
+      this.audioProcessor.onaudioprocess = (event) => {
+        if (!this.running || !this.audioEnabled) {
+          // Fill with silence when paused or disabled
+          const output = event.outputBuffer.getChannelData(0);
+          output.fill(0);
+          return;
+        }
+
+        // Generate audio samples from the PSG
+        const samples = this.machine.generateAudioSamples(AUDIO_BUFFER_SIZE);
+        console.log("Generated audio samples:", samples);
+        const output = event.outputBuffer.getChannelData(0);
+
+        // Copy samples to output buffer
+        for (let i = 0; i < AUDIO_BUFFER_SIZE; i++) {
+          output[i] = samples[i] || 0;
+        }
+      };
+    } catch (error) {
+      console.error("Failed to initialize audio:", error);
+      this.audioEnabled = false;
+    }
+  }
+
+  /**
+   * Toggles audio on/off.
+   */
+  public toggleAudio() {
+    this.audioEnabled = !this.audioEnabled;
+    console.log("Audio", this.audioEnabled ? "enabled" : "disabled");
+  }
+
+  /**
+   * Gets the current audio enabled state.
+   */
+  public get isAudioEnabled(): boolean {
+    return this.audioEnabled;
+  }
+
+  /**
+   * Cleanup audio resources.
+   */
+  public destroy() {
+    if (this.audioProcessor) {
+      this.audioProcessor.disconnect();
+      this.audioProcessor = null;
+    }
+    if (this.audioContext) {
+      this.audioContext.close();
+      this.audioContext = null;
+    }
   }
 }
 
@@ -470,6 +568,21 @@ function setupMachine(machine: Machine, isRestart: boolean = false) {
   currentApp = app;
   currentEmulator = emulator;
 
+  // Set up audio toggle button
+  const audioToggle = document.getElementById(
+    "audio-toggle",
+  ) as HTMLButtonElement;
+  const audioStatus = document.getElementById("audio-status") as HTMLDivElement;
+
+  if (audioToggle && audioStatus) {
+    audioToggle.addEventListener("click", () => {
+      emulator.toggleAudio();
+      const isAudioEnabled = emulator.isAudioEnabled;
+      audioStatus.textContent = isAudioEnabled ? "On" : "Off";
+      audioToggle.textContent = isAudioEnabled ? "Disable" : "Enable";
+    });
+  }
+
   let lastTime = Date.now();
 
   // Note: Event listeners will accumulate, but this is okay for our use case
@@ -543,7 +656,7 @@ async function setupBiosSelector() {
       try {
         const arrayBuffer = await file.arrayBuffer();
         const data = new Uint8Array(arrayBuffer);
-        
+
         // Pad to 64KB if necessary
         let romData = data;
         if (data.length < 64 * 1024) {
@@ -551,16 +664,20 @@ async function setupBiosSelector() {
           romData.fill(0xFF);
           romData.set(data, 0);
         }
-        
+
         setCustomRom(romData, file.name);
-        
+
         // Update the select option text to show the filename
-        const customOption = biosSelector.querySelector('option[value="custom"]');
+        const customOption = biosSelector.querySelector(
+          'option[value="custom"]',
+        );
         if (customOption) {
           customOption.textContent = `Custom: ${file.name}`;
         }
-        
-        console.log(`Custom ROM loaded: ${file.name} (${data.length} bytes, padded to ${romData.length} bytes)`);
+
+        console.log(
+          `Custom ROM loaded: ${file.name} (${data.length} bytes, padded to ${romData.length} bytes)`,
+        );
       } catch (error) {
         console.error("Failed to load custom ROM:", error);
         alert(`Failed to load custom ROM: ${error}`);

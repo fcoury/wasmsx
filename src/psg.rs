@@ -1,37 +1,71 @@
 #![allow(dead_code)]
 use serde::{Deserialize, Serialize};
-use tracing::trace;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct AY38910 {
     registers: [u8; 16],
     selected_register: u8,
+    channel: AudioChannel,
+    clock_divider: u32,
+    sample_counter: u32,
 }
 
 impl AY38910 {
     pub fn new() -> Self {
-        Self {
+        let mut psg = Self {
             registers: [0; 16],
             selected_register: 0,
-            // ... (Initialize other fields)
-        }
+            channel: AudioChannel::new(),
+            clock_divider: 0,
+            sample_counter: 0,
+        };
+        
+        // Initialize register 7 (mixer) to 0xFF (all channels disabled by default)
+        psg.registers[7] = 0xFF;
+        psg.channel.set_mixer_control(0xFF);
+        
+        psg
     }
 
     pub fn reset(&mut self) {
         self.registers = [0; 16];
         self.selected_register = 0;
-        // ... (Reset other fields)
+        self.channel.reset();
+        self.clock_divider = 0;
+        self.sample_counter = 0;
     }
 
     pub fn generate_sample(&mut self) -> f32 {
-        // Generate a single audio sample
-        todo!()
+        // Generate next PSG sample
+        let samples = self.channel.next_sample();
+        // Convert from u8 (0-255) to f32 (-1.0 to 1.0)
+        // 0 -> -1.0, 128 -> 0.0, 255 -> ~1.0
+        let mono_sample = (samples[0] as f32 / 128.0) - 1.0;
+        
+        // Debug: log non-silent samples
+        if samples[0] != 0 {
+            tracing::info!("[PSG] Generated sample: {} -> {}", samples[0], mono_sample);
+        }
+        
+        mono_sample
+    }
+    
+    pub fn clock(&mut self, cycles: u32) {
+        // PSG runs at CPU_CLOCK / 8 = ~447kHz
+        const PSG_CLOCK_DIVIDER: u32 = 8;
+        
+        self.clock_divider += cycles;
+        while self.clock_divider >= PSG_CLOCK_DIVIDER {
+            self.clock_divider -= PSG_CLOCK_DIVIDER;
+            // Clock the internal audio channel
+            // This is where timing-sensitive updates would happen
+        }
     }
 
     pub fn read(&mut self, port: u8) -> u8 {
         match port {
             0xA0 => self.selected_register,
-            0xA1 => self.registers[self.selected_register as usize],
+            0xA1 | 0xA2 => self.registers[self.selected_register as usize],
             _ => 0,
         }
     }
@@ -39,43 +73,124 @@ impl AY38910 {
     pub fn write(&mut self, port: u8, data: u8) {
         match port {
             0xA0 => {
-                trace!("[psg] Selecting register {:02X}", data);
+                tracing::info!("[PSG] Selecting register {:02X}", data);
                 self.selected_register = data & 0x0F;
             }
             0xA1 => {
-                trace!(
-                    "[psg] Writing {:02X} to register {:02X}",
+                tracing::info!(
+                    "[PSG] Writing {:02X} to register {:02X}",
                     data,
                     self.selected_register
                 );
                 self.registers[self.selected_register as usize] = data;
-                // ... (Update the internal state of the PSG based on the new register value)
+                self.update_channel_from_register(self.selected_register, data);
+            }
+            _ => {}
+        }
+    }
+    
+    pub fn set_pulse_signal(&mut self, active: bool) {
+        self.channel.pulse_signal = active;
+        if active {
+            self.channel.pulse_signal_on_clocks = self.sample_counter as u8;
+            self.channel.current_sample_p = 1.0;
+        }
+    }
+    
+    fn update_channel_from_register(&mut self, reg: u8, value: u8) {
+        match reg {
+            // Channel A tone period
+            0 => {
+                // Register 0 is the low byte
+                let period = (self.registers[1] as u16) << 8 | value as u16;
+                tracing::info!("[PSG] Channel A period low: {}, full period: {}", value, period);
+                self.channel.set_period_a(period);
+            }
+            1 => {
+                // Register 1 is the high byte
+                let period = (value as u16) << 8 | self.registers[0] as u16;
+                tracing::info!("[PSG] Channel A period high: {}, full period: {}", value, period);
+                self.channel.set_period_a(period);
+            }
+            // Channel B tone period
+            2 => {
+                let period = (self.registers[3] as u16) << 8 | value as u16;
+                self.channel.set_period_b(period);
+            }
+            3 => {
+                let period = (value as u16) << 8 | self.registers[2] as u16;
+                self.channel.set_period_b(period);
+            }
+            // Channel C tone period
+            4 => {
+                let period = (self.registers[5] as u16) << 8 | value as u16;
+                self.channel.set_period_c(period);
+            }
+            5 => {
+                let period = (value as u16) << 8 | self.registers[4] as u16;
+                self.channel.set_period_c(period);
+            }
+            // Noise period
+            6 => self.channel.set_period_n(value & 0x1F),
+            // Mixer control
+            7 => {
+                tracing::info!("[PSG] Mixer control: {:02X} (toneA:{}, noiseA:{}, toneB:{}, noiseB:{}, toneC:{}, noiseC:{})", 
+                    value,
+                    (value & 0x01) == 0,
+                    (value & 0x08) == 0,
+                    (value & 0x02) == 0,
+                    (value & 0x10) == 0,
+                    (value & 0x04) == 0,
+                    (value & 0x20) == 0
+                );
+                self.channel.set_mixer_control(value);
+            }
+            // Channel volumes
+            8 => self.channel.set_amplitude_a(value & 0x1F),
+            9 => self.channel.set_amplitude_b(value & 0x1F),
+            10 => self.channel.set_amplitude_c(value & 0x1F),
+            // Envelope period
+            11 => {
+                let period = (self.registers[12] as u16) << 8 | value as u16;
+                self.channel.set_period_e(period);
+            }
+            12 => {
+                let period = (value as u16) << 8 | self.registers[11] as u16;
+                self.channel.set_period_e(period);
+            }
+            // Envelope shape
+            13 => {
+                self.channel.continue_e = (value & 0x08) != 0;
+                self.channel.attack_e = (value & 0x04) != 0;
+                self.channel.alternate_e = (value & 0x02) != 0;
+                self.channel.hold_e = (value & 0x01) != 0;
+                self.channel.cycle_envelope(self.channel.alternate_e, self.channel.hold_e);
             }
             _ => {}
         }
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 struct AudioChannel {
-    period_a: u8,
-    period_a_counter: u8,
+    period_a: u16,
+    period_a_counter: u16,
     current_sample_a: f32,
     amplitude_a: f32,
     tone_a: bool,
     noise_a: bool,
     envelope_a: bool,
 
-    period_b: u8,
-    period_b_counter: u8,
+    period_b: u16,
+    period_b_counter: u16,
     current_sample_b: f32,
     amplitude_b: f32,
     tone_b: bool,
     noise_b: bool,
     envelope_b: bool,
 
-    period_c: u8,
-    period_c_counter: u8,
+    period_c: u16,
+    period_c_counter: u16,
     current_sample_c: f32,
     amplitude_c: f32,
     tone_c: bool,
@@ -86,25 +201,28 @@ struct AudioChannel {
     period_n_countdown: u8,
     current_sample_n: f32,
 
-    period_e: u8,
-    period_e_countdown: u8,
+    period_e: u16,
+    period_e_countdown: u16,
     current_value_e: f32,
-    direction_e: i8,
-    continue_e: bool,
-    attack_e: bool,
-    alternate_e: bool,
-    hold_e: bool,
+    pub direction_e: i8,
+    pub continue_e: bool,
+    pub attack_e: bool,
+    pub alternate_e: bool,
+    pub hold_e: bool,
 
-    pulse_signal: bool,
-    pulse_signal_on_clocks: u8,
-    current_sample_p: f32,
+    pub pulse_signal: bool,
+    pub pulse_signal_on_clocks: u8,
+    pub current_sample_p: f32,
 
     sample_result: [u8; 2],
 
+    #[serde(skip)]
     volume_curve: Vec<f32>,
 
-    vol_pan_l: [f32; 4],
-    vol_pan_r: [f32; 4],
+    #[serde(skip)]
+    vol_pan_l: Vec<f32>,
+    #[serde(skip)]
+    vol_pan_r: Vec<f32>,
 
     lfsr: u32,
 }
@@ -114,7 +232,7 @@ impl AudioChannel {
         let mut volume_curve = Vec::new();
         for i in 0..16 {
             let volume = (i as f32) / 15.0;
-            let volume = volume.powf(CHANNEL_VOLUME_CURVE_POWER as f32);
+            // Simple linear volume for now
             volume_curve.push(volume);
         }
 
@@ -128,46 +246,51 @@ impl AudioChannel {
     }
 
     pub fn reset(&mut self) {
-        // this.setMixerControl(0xff);
-        // this.setAmplitudeA(0);
-        // this.setAmplitudeB(0);
-        // this.setAmplitudeC(0);
-        // pulseSignal = false; pulseSignalOnClock = 0; currentSampleP = 0;
+        self.set_mixer_control(0xff);
+        self.set_amplitude_a(0);
+        self.set_amplitude_b(0);
+        self.set_amplitude_c(0);
+        self.pulse_signal = false;
+        self.pulse_signal_on_clocks = 0;
+        self.current_sample_p = 0.0;
     }
 
-    fn set_period_a(&mut self, new_period: u8) {
-        if self.period_a == new_period {
+    fn set_period_a(&mut self, new_period: u16) {
+        let period = new_period & 0xFFF;
+        if self.period_a == period {
             return;
         }
-        if new_period < 2 {
+        if period < 2 {
             self.period_a = 0;
             self.current_sample_a = 1.0;
         } else {
-            self.period_a = new_period;
+            self.period_a = period;
         }
     }
 
-    fn set_period_b(&mut self, new_period: u8) {
-        if self.period_b == new_period {
+    fn set_period_b(&mut self, new_period: u16) {
+        let period = new_period & 0xFFF;
+        if self.period_b == period {
             return;
         }
-        if new_period < 2 {
+        if period < 2 {
             self.period_b = 0;
             self.current_sample_b = 1.0;
         } else {
-            self.period_b = new_period;
+            self.period_b = period;
         }
     }
 
-    fn set_period_c(&mut self, new_period: u8) {
-        if self.period_c == new_period {
+    fn set_period_c(&mut self, new_period: u16) {
+        let period = new_period & 0xFFF;
+        if self.period_c == period {
             return;
         }
-        if new_period < 2 {
+        if period < 2 {
             self.period_c = 0;
             self.current_sample_c = 1.0;
         } else {
-            self.period_c = new_period;
+            self.period_c = period;
         }
     }
 
@@ -178,11 +301,12 @@ impl AudioChannel {
         self.period_n = if new_period < 1 { 1 } else { new_period };
     }
 
-    fn set_period_e(&mut self, new_period: u8) {
-        if self.period_e == new_period {
+    fn set_period_e(&mut self, new_period: u16) {
+        let period = new_period & 0xFFFF;
+        if self.period_e == period {
             return;
         }
-        self.period_e = if new_period < 1 { 1 } else { new_period };
+        self.period_e = if period < 1 { 1 } else { period };
     }
 
     fn set_amplitude_a(&mut self, new_amplitude: u8) {
@@ -229,7 +353,7 @@ impl AudioChannel {
         if self.period_a > 0 {
             self.period_a_counter += 2;
             if self.period_a_counter >= self.period_a {
-                self.period_a_counter = (self.period_a_counter - self.period_a) & 1;
+                self.period_a_counter = self.period_a_counter - self.period_a;
                 self.current_sample_a = if self.current_sample_a != 0.0 {
                     0.0
                 } else {
@@ -240,7 +364,7 @@ impl AudioChannel {
         if self.period_b > 0 {
             self.period_b_counter += 2;
             if self.period_b_counter >= self.period_b {
-                self.period_b_counter = (self.period_b_counter - self.period_b) & 1;
+                self.period_b_counter = self.period_b_counter - self.period_b;
                 self.current_sample_b = if self.current_sample_b != 0.0 {
                     0.0
                 } else {
@@ -251,7 +375,7 @@ impl AudioChannel {
         if self.period_c > 0 {
             self.period_c_counter += 2;
             if self.period_c_counter >= self.period_c {
-                self.period_c_counter = (self.period_c_counter - self.period_c) & 1;
+                self.period_c_counter = self.period_c_counter - self.period_c;
                 self.current_sample_c = if self.current_sample_c != 0.0 {
                     0.0
                 } else {
@@ -283,7 +407,7 @@ impl AudioChannel {
             }
         }
 
-        let vol_pan = !self.vol_pan_l.is_empty() && !self.vol_pan_r.is_empty();
+        let vol_pan = self.vol_pan_l.len() >= 4 && self.vol_pan_r.len() >= 4;
         if vol_pan {
             // has to be VOLPAN, the const
             // Complete Stereo path (VOL/PAN)
@@ -332,7 +456,7 @@ impl AudioChannel {
             self.sample_result
         } else {
             // Simple Mono path (no VOL/PAN)
-            let m_sample_result = if self.amplitude_a == 0.0
+            let mut m_sample_result = if self.amplitude_a == 0.0
                 || (self.tone_a && self.current_sample_a == 0.0)
                 || (self.noise_a && self.current_sample_n == 0.0)
             {
@@ -360,9 +484,11 @@ impl AudioChannel {
                 {
                     self.current_sample_p = 0.0;
                 }
-                // m_sample_result += CHANNEL_MAX_VOLUME;
+                m_sample_result += CHANNEL_MAX_VOLUME;
             }
-            [m_sample_result as u8, m_sample_result as u8]
+            // Scale to 0-255 range (assuming max amplitude is 1.0 per channel, so max 3.0 total)
+            let scaled = ((m_sample_result * 255.0).min(255.0)) as u8;
+            [scaled, scaled]
         }
     }
 

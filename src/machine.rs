@@ -129,6 +129,9 @@ impl Machine {
             // Execute CPU instruction and get actual cycle count
             let cycles_taken = self.cpu.step();
             
+            // Clock the bus components (including PSG)
+            self.bus.borrow_mut().clock(cycles_taken);
+            
             // Update clock and handle timing events
             let events = self.clock.tick(cycles_taken);
             if !events.is_empty() {
@@ -202,6 +205,9 @@ impl Machine {
             
             // Execute CPU instruction and get actual cycle count
             let cycles_taken = self.cpu.step();
+            
+            // Clock the bus components (including PSG)
+            self.bus.borrow_mut().clock(cycles_taken);
             
             // Update clock and handle timing events
             let events = self.clock.tick(cycles_taken);

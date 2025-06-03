@@ -24,6 +24,7 @@ pub use utils::{compare_slices, hexdump, partial_hexdump};
 pub use vdp::TMS9918;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
+use js_sys::Float32Array;
 
 pub fn get_machine(rom_data: &[u8]) -> Machine {
     MachineBuilder::new()
@@ -201,5 +202,24 @@ impl JsMachine {
     #[wasm_bindgen(js_name=ejectDisk)]
     pub fn eject_disk(&mut self, drive: usize) {
         self.0.eject_disk(drive);
+    }
+    
+    #[wasm_bindgen(js_name=generateAudioSamples)]
+    pub fn generate_audio_samples(&mut self, sample_count: usize) -> Float32Array {
+        let mut samples = Vec::with_capacity(sample_count);
+        
+        // Generate audio samples
+        for _ in 0..sample_count {
+            let sample = self.0.bus.borrow_mut().psg.generate_sample();
+            samples.push(sample);
+        }
+        
+        // Convert to JavaScript Float32Array
+        let array = Float32Array::new_with_length(samples.len() as u32);
+        for (i, &sample) in samples.iter().enumerate() {
+            array.set_index(i as u32, sample);
+        }
+        
+        array
     }
 }

@@ -38,7 +38,11 @@ impl Ppi {
     }
 
     fn update_pulse_signal(&self) {
-        // TODO: psg.set_pulse_signal((register_c & 0xa0) > 0);
+        // The pulse signal is controlled by bits 5 and 7 of register C
+        // This needs to be connected to the PSG via the bus
+        // For now, we'll just log when it changes
+        let pulse_active = (self.register_c & 0xa0) != 0;
+        tracing::trace!("[PPI] Pulse signal: {}", if pulse_active { "ON" } else { "OFF" });
     }
 
     pub fn read(&mut self, port: u8) -> u8 {
@@ -198,7 +202,7 @@ impl Ppi {
 
                 match bit {
                     0..=3 => self.update_keyboard_config(),
-                    // 5 | 7 => self.update_pulse_signal(),
+                    5 | 7 => self.update_pulse_signal(),
                     6 => self.update_caps_led(),
                     _ => (),
                 }

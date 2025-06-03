@@ -61,6 +61,17 @@ impl Bus {
         }
     }
 
+    pub fn clock(&mut self, cycles: u32) {
+        // Clock the PSG for audio generation
+        self.psg.clock(cycles);
+    }
+    
+    pub fn update_psg_pulse_signal(&mut self) {
+        // Update PSG pulse signal based on PPI register C bits 5 and 7
+        let pulse_active = (self.ppi.register_c() & 0xa0) != 0;
+        self.psg.set_pulse_signal(pulse_active);
+    }
+
     pub fn enable_fdc(&mut self) {
         if self.fdc.is_none() {
             tracing::info!("[BUS] Enabling FDC");
@@ -129,7 +140,7 @@ impl Bus {
         }
         match port {
             0x98 | 0x99 => self.vdp.read(port),
-            0xA0 | 0xA1 => self.psg.read(port),
+            0xA0 | 0xA1 | 0xA2 => self.psg.read(port),
             0xA8..=0xAB => self.ppi.read(port),
             0x7C..=0x7F => {
                 if let Some(fdc) = &mut self.fdc {
@@ -199,6 +210,10 @@ impl Bus {
         match port {
             0x98 | 0x99 => self.vdp.write(port, data),
             0xA0 | 0xA1 => self.psg.write(port, data),
+            0xA2 => {
+                // Port 0xA2 is read-only for PSG, writes are ignored
+                tracing::trace!("[BUS] Ignored write to PSG read port 0xA2: {:02X}", data);
+            }
             0xA8 => {
                 // PPI Port A (Slot select)
                 self.ppi.write(port, data);
@@ -209,8 +224,13 @@ impl Bus {
             }
             0xAA | 0xAB => {
                 // PPI Port C or Control
+                let old_register_c = self.ppi.register_c();
                 self.ppi.write(port, data);
                 self.sync_fdc_motor_with_ppi();
+                // Update PSG pulse signal if register C changed
+                if port == 0xAA || (port == 0xAB && old_register_c != self.ppi.register_c()) {
+                    self.update_psg_pulse_signal();
+                }
             }
             0x7C..=0x7F => {
                 let p = port - 0xD0 + 0x7C;
