@@ -134,25 +134,28 @@ class App {
    * @param {number} dt - The delta time since the last frame
    */
   public frame(dt: number) {
-    if (dt > 0.2) {
-      console.log(`${dt} seconds behind`);
-    } else {
-      this.emulator.run(dt);
-      this.renderer.renderScreen(this.emulator.getScreen());
-      if (this.debugVisible) {
-        this.emulator.renderState();
-        this.emulator.renderVRAM();
-      }
+    // Cap delta time to prevent spiral of death
+    const cappedDt = Math.min(dt, 0.1); // Cap at 100ms (10 FPS minimum)
+    
+    this.emulator.run(cappedDt);
+    
+    // Always render for now to debug the issue
+    this.renderer.renderScreen(this.emulator.getScreen());
+    if (this.debugVisible) {
+      this.emulator.renderState();
+      this.emulator.renderVRAM();
     }
   }
 }
 
 class Emulator {
-  private timeBudget: number;
   private machine: Machine;
   private running: boolean;
   private vram: HTMLDivElement;
   private state: HTMLDivElement;
+  private frameTime: number;
+  private frameAccumulator: number;
+  private timeBudget: number;
 
   /**
    * Constructs a new Emulator instance.
@@ -161,6 +164,8 @@ class Emulator {
   constructor(machine: Machine) {
     this.running = true;
     this.machine = machine;
+    this.frameTime = 1 / 60; // Target 60 FPS
+    this.frameAccumulator = 0;
     this.timeBudget = 0;
     this.vram = document.getElementById("vram") as HTMLDivElement;
     this.state = document.getElementById("state") as HTMLDivElement;
@@ -171,11 +176,16 @@ class Emulator {
    * @param {number} dt - The delta time since the last run
    */
   public run(dt: number) {
+    // Use cycle-based approach with proper timing
     this.timeBudget += dt;
     const cycles = Math.floor(this.timeBudget * PROCESSOR_RATE);
     const cycleTime = cycles / PROCESSOR_RATE;
     this.timeBudget -= cycleTime;
-    this.machine.step_for(cycles);
+    
+    // Step the machine for the calculated cycles
+    if (cycles > 0) {
+      this.machine.step_for(cycles);
+    }
   }
 
   /**
@@ -199,6 +209,14 @@ class Emulator {
    */
   public getScreen(): Uint8Array {
     return this.machine.screen();
+  }
+  
+  /**
+   * Returns whether a complete frame is ready to render.
+   * @returns {boolean} Whether a frame is ready
+   */
+  public isFrameReady(): boolean {
+    return this.machine.isFrameReady();
   }
 
   /**

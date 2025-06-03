@@ -4,6 +4,7 @@ use z80::{Z80_io, Z80};
 
 use crate::{
     bus::{Bus, MemorySegment},
+    clock::{Clock, ClockEvent, CPU_CYCLES_PER_SCANLINE, SCANLINES_PER_FRAME},
     fdc::DiskImage,
     partial_hexdump,
     slot::{RamSlot, RomSlot, SlotType},
@@ -14,8 +15,9 @@ pub struct Machine {
     pub bus: Rc<RefCell<Bus>>,
     pub cpu: Z80<Io>,
     pub queue: Rc<RefCell<VecDeque<Message>>>,
-    pub current_scanline: u16,
+    pub clock: Clock,
     pub cycles: usize,
+    pub frame_ready: bool,
 }
 
 impl Machine {
@@ -30,9 +32,9 @@ impl Machine {
             bus,
             cpu,
             queue,
-            current_scanline: 0,
-            cycles: 0, // cpu cycles
-                       // bus_cycles: 0, // bus cycles
+            clock: Clock::new(),
+            cycles: 0,
+            frame_ready: false,
         }
     }
 
@@ -103,35 +105,123 @@ impl Machine {
     }
 
     pub fn step_for(&mut self, n: usize) {
-        self.queue.borrow_mut().push_back(Message::CpuStep);
-
-        let mut steps = 0;
-        loop {
-            let Some(message) = self.queue.borrow_mut().pop_front() else {
-                break;
-            };
-
-            match message {
-                Message::EnableInterrupts => {
-                    self.cpu.assert_irq(0);
+        let mut cycles_executed = 0;
+        
+        while cycles_executed < n {
+            // Process any pending messages first
+            while let Some(message) = self.queue.borrow_mut().pop_front() {
+                match message {
+                    Message::EnableInterrupts => {
+                        self.cpu.assert_irq(0);
+                    }
+                    Message::DisableInterrupts => {
+                        self.cpu.clr_irq();
+                    }
+                    Message::CpuStep => {
+                        // This shouldn't happen in the queue
+                    }
+                    Message::DebugPC => {
+                        tracing::info!("Cycles: {} PC: {:04X}", self.cycles, self.cpu.pc);
+                    }
                 }
-                Message::DisableInterrupts => {
-                    self.cpu.clr_irq();
+            }
+            
+            // Execute CPU instruction and get actual cycle count
+            let cycles_taken = self.cpu.step();
+            
+            // Update clock and handle timing events
+            let events = self.clock.tick(cycles_taken);
+            if !events.is_empty() {
+                self.handle_clock_events(events);
+            }
+            
+            self.cycles += cycles_taken as usize;
+            cycles_executed += cycles_taken as usize;
+        }
+    }
+    
+    fn handle_clock_events(&mut self, events: Vec<ClockEvent>) {
+        for event in events {
+            match event {
+                ClockEvent::VBlankStart => {
+                    // Generate VDP interrupt
+                    let mut bus = self.bus.borrow_mut();
+                    bus.vdp.set_vblank(true);
+                    if bus.vdp.is_interrupt_enabled() {
+                        self.cpu.assert_irq(0);
+                    }
                 }
-                Message::CpuStep => {
-                    self.cpu.step();
+                ClockEvent::VBlankEnd => {
+                    let mut bus = self.bus.borrow_mut();
+                    bus.vdp.set_vblank(false);
                 }
-                Message::DebugPC => {
-                    tracing::info!("Cycles: {} PC: {:04X}", self.cycles, self.cpu.pc);
+                ClockEvent::HBlankStart => {
+                    // Could be used for mid-scanline effects
                 }
-            };
-
-            if steps < n {
-                self.queue.borrow_mut().push_back(Message::CpuStep);
-                self.cycles += 1;
-                steps += 1;
+                ClockEvent::HBlankEnd => {
+                    // Could be used for mid-scanline effects
+                }
+                ClockEvent::ScanlineStart(line) => {
+                    // Update VDP scanline for scanline-based rendering
+                    let mut bus = self.bus.borrow_mut();
+                    bus.vdp.set_current_scanline(line as u16);
+                }
+                ClockEvent::FrameEnd => {
+                    self.frame_ready = true;
+                    tracing::trace!("Frame {} completed, total cycles: {}", 
+                        self.clock.frame_count(), self.clock.total_cycles());
+                }
             }
         }
+    }
+    
+    pub fn step_frame(&mut self) {
+        self.frame_ready = false;
+        let cycles_per_frame = (SCANLINES_PER_FRAME * CPU_CYCLES_PER_SCANLINE) as usize;
+        let target_cycles = self.cycles + cycles_per_frame;
+        
+        // Run CPU for one complete frame worth of cycles
+        while self.cycles < target_cycles {
+            // Process any pending messages
+            while let Some(message) = self.queue.borrow_mut().pop_front() {
+                match message {
+                    Message::EnableInterrupts => {
+                        self.cpu.assert_irq(0);
+                    }
+                    Message::DisableInterrupts => {
+                        self.cpu.clr_irq();
+                    }
+                    Message::CpuStep => {
+                        // This shouldn't happen in the queue
+                    }
+                    Message::DebugPC => {
+                        tracing::info!("Cycles: {} PC: {:04X}", self.cycles, self.cpu.pc);
+                    }
+                }
+            }
+            
+            // Execute CPU instruction and get actual cycle count
+            let cycles_taken = self.cpu.step();
+            
+            // Update clock and handle timing events
+            let events = self.clock.tick(cycles_taken);
+            if !events.is_empty() {
+                self.handle_clock_events(events);
+            }
+            
+            self.cycles += cycles_taken as usize;
+        }
+        
+        // Frame is complete
+        self.frame_ready = true;
+    }
+    
+    pub fn is_frame_ready(&self) -> bool {
+        self.frame_ready
+    }
+    
+    pub fn get_frame_progress(&self) -> f64 {
+        self.clock.frame_progress()
     }
 
     pub fn primary_slot_config(&self) -> u8 {
@@ -180,8 +270,9 @@ impl Default for Machine {
             cpu,
             bus,
             queue,
+            clock: Clock::new(),
             cycles: 0,
-            current_scanline: 0,
+            frame_ready: false,
         }
     }
 }

@@ -1,4 +1,5 @@
 pub mod bus;
+pub mod clock;
 pub mod fdc;
 pub mod instruction;
 pub mod internal_state;
@@ -141,6 +142,21 @@ impl JsMachine {
 
     pub fn step_for(&mut self, n: usize) {
         self.0.step_for(n);
+    }
+    
+    #[wasm_bindgen(js_name = stepFrame)]
+    pub fn step_frame(&mut self) {
+        self.0.step_frame();
+    }
+    
+    #[wasm_bindgen(js_name = isFrameReady)]
+    pub fn is_frame_ready(&self) -> bool {
+        self.0.is_frame_ready()
+    }
+    
+    #[wasm_bindgen(js_name = getFrameProgress)]
+    pub fn get_frame_progress(&self) -> f64 {
+        self.0.get_frame_progress()
     }
 
     pub fn screen(&self) -> Vec<u8> {

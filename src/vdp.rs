@@ -614,6 +614,46 @@ impl TMS9918 {
             self.update_irq();
         }
     }
+    
+    pub fn set_vblank(&mut self, active: bool) {
+        self.vblank = active;
+        if active && self.f == 0 {
+            self.f = 1;
+            self.update_irq();
+        }
+    }
+    
+    pub fn set_current_scanline(&mut self, line: u16) {
+        self.line = (line & 0xFF) as u8;
+    }
+    
+    pub fn is_interrupt_enabled(&self) -> bool {
+        // Check if VDP interrupts are enabled (bit 5 of register 1)
+        self.registers[1] & 0x20 != 0
+    }
+    
+    pub fn render_scanline(&mut self, scanline: u32) -> Option<Vec<u8>> {
+        // Only render visible scanlines
+        if scanline >= 192 {
+            return None;
+        }
+        
+        // Create a temporary renderer for this scanline
+        let mut renderer = crate::renderer::Renderer::new(self);
+        
+        // Render just this scanline
+        match self.display_mode {
+            DisplayMode::Text1 => renderer.render_text1(scanline as usize),
+            DisplayMode::Graphic1 => renderer.render_graphic1(scanline as usize),
+            DisplayMode::Graphic2 => renderer.render_graphic2(scanline as usize),
+            _ => {}
+        }
+        
+        // Extract the scanline data
+        let start = (scanline as usize) * 256;
+        let end = start + 256;
+        Some(renderer.screen_buffer[start..end].to_vec())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
