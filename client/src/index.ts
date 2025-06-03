@@ -86,9 +86,9 @@ class Renderer {
       for (let x = 0; x < 256; x++) {
         const colorOffset = y * 256 + x;
         const color = buffer[colorOffset];
-        if (!color) continue;
+        // Remove the skip for color 0 - we need to render black pixels too!
         const colorBytes = new Uint8Array(4);
-        const paletteColor = PALETTE[color] || 0xffffff;
+        const paletteColor = PALETTE[color] || 0x000000;
 
         colorBytes[0] = (paletteColor >> 16) & 0xff;
         colorBytes[1] = (paletteColor >> 8) & 0xff;
@@ -125,6 +125,7 @@ class App {
    * @returns {boolean} Whether the key was handled
    */
   public keyDown(key: string): boolean {
+    console.log("keyDown", key);
     return this.emulator.keyDown(key);
   }
 
@@ -134,6 +135,7 @@ class App {
    * @returns {boolean} Whether the key was handled
    */
   public keyUp(key: string): boolean {
+    console.log("keyUp", key);
     const handled = this.emulator.keyUp(key);
     return handled;
   }
@@ -323,9 +325,9 @@ class Emulator {
    */
   private initAudio() {
     try {
-      this.audioContext = new AudioContext({ 
+      this.audioContext = new AudioContext({
         sampleRate: AUDIO_SAMPLE_RATE,
-        latencyHint: 'interactive' // Lower latency for better responsiveness
+        latencyHint: "interactive", // Lower latency for better responsiveness
       });
 
       // Create a script processor for audio generation
@@ -339,12 +341,14 @@ class Emulator {
       this.audioProcessor.connect(this.audioContext.destination);
       this.audioEnabled = true;
 
-      console.log(`Audio initialized: ${AUDIO_SAMPLE_RATE}Hz, buffer size: ${AUDIO_BUFFER_SIZE}`);
+      console.log(
+        `Audio initialized: ${AUDIO_SAMPLE_RATE}Hz, buffer size: ${AUDIO_BUFFER_SIZE}`,
+      );
 
       this.audioProcessor.onaudioprocess = (event) => {
         const output = event.outputBuffer.getChannelData(0);
         const bufferSize = event.outputBuffer.length;
-        
+
         if (!this.running || !this.audioEnabled) {
           // Fill with silence when paused or disabled
           output.fill(0);
@@ -354,14 +358,14 @@ class Emulator {
         // WebMSX runs PSG at ~112kHz, we need to downsample to 44.1kHz
         // This is approximately 2.54 PSG samples per audio output sample
         const resampleRatio = PSG_NATIVE_RATE / AUDIO_SAMPLE_RATE;
-        
+
         // Generate audio samples from the PSG with proper resampling
         const samples = this.machine.generateAudioSamples(bufferSize);
-        
+
         // Copy samples to output buffer with simple low-pass filtering
         for (let i = 0; i < bufferSize; i++) {
           const sample = samples[i] || 0;
-          
+
           // Simple low-pass filter to reduce aliasing
           if (i > 0) {
             const prevSample = output[i - 1] ?? 0;

@@ -22,7 +22,7 @@ impl Keyboard {
         if let Some(key) = self.mappings.iter().find(|k| k.key == key) {
             self.pressed.remove(&key.mapping);
         }
-        // tracing::info!("KeyUp: {}, Pressed: {:?}", key, self.pressed);
+        tracing::info!("KeyUp: {}, Pressed: {:?}", key, self.pressed);
     }
 
     pub fn get_row(&mut self, row: u8) -> u8 {

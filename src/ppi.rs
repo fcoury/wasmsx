@@ -30,6 +30,7 @@ impl Ppi {
     }
 
     pub fn key_up(&mut self, key: String) {
+        tracing::trace!("[PPI] Key up: {}", key);
         self.keyboard.key_up(key);
     }
 
@@ -42,7 +43,10 @@ impl Ppi {
         // This needs to be connected to the PSG via the bus
         // For now, we'll just log when it changes
         let pulse_active = (self.register_c & 0xa0) != 0;
-        tracing::trace!("[PPI] Pulse signal: {}", if pulse_active { "ON" } else { "OFF" });
+        tracing::trace!(
+            "[PPI] Pulse signal: {}",
+            if pulse_active { "ON" } else { "OFF" }
+        );
     }
 
     pub fn read(&mut self, port: u8) -> u8 {

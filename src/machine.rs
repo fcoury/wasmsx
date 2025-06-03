@@ -149,6 +149,8 @@ impl Machine {
                 ClockEvent::VBlankStart => {
                     // Generate VDP interrupt
                     let mut bus = self.bus.borrow_mut();
+                    // Evaluate sprites once per frame at the start of VBlank
+                    bus.vdp.evaluate_all_sprite_lines();
                     bus.vdp.set_vblank(true);
                     if bus.vdp.is_interrupt_enabled() {
                         self.cpu.assert_irq(0);

@@ -65,7 +65,7 @@ impl Bus {
         // Clock the PSG for audio generation
         self.psg.clock(cycles);
     }
-    
+
     pub fn update_psg_pulse_signal(&mut self) {
         // Update PSG pulse signal based on PPI register C bits 5 and 7
         let pulse_active = (self.ppi.register_c() & 0xa0) != 0;
@@ -359,7 +359,7 @@ impl Bus {
                 || addr == 0x401F
                 || addr == 0x4022
             {
-                tracing::info!(
+                tracing::trace!(
                     "[DISK ROM] Entry point access: addr={:04X}, slot={}, value={:02X}",
                     addr,
                     slot_number,

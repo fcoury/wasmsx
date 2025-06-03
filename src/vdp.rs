@@ -305,21 +305,27 @@ impl TMS9918 {
         self.sprites_invalid = None;
         self.status &= !0x40; // Clear 5S flag
         
+        // Load sprite data once for the entire frame
+        self.load_sprites_from_sat();
+        
         // Evaluate sprites for each scanline
         for line in 0..192 {
-            let visible = self.evaluate_sprites_on_line(line as u8);
+            let visible = self.evaluate_sprites_on_line_cached(line as u8);
             self.sprites_visible[line] = visible;
         }
     }
 
     pub fn evaluate_sprites_on_line(&mut self, line: u8) -> Vec<usize> {
+        // This method loads sprites from SAT each time - used for debugging/testing
+        self.load_sprites_from_sat();
+        self.evaluate_sprites_on_line_cached(line)
+    }
+    
+    fn evaluate_sprites_on_line_cached(&mut self, line: u8) -> Vec<usize> {
         let mut visible_sprites = Vec::new();
         let sprite_size = self.sprite_size();
         let magnification = self.sprite_magnification();
         let actual_size = sprite_size * magnification;
-        
-        // First, load current sprite data from SAT
-        self.load_sprites_from_sat();
         
         // Check each sprite to see if it's visible on this line
         for i in 0..32 {
