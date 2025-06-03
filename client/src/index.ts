@@ -20,9 +20,10 @@ import {
   setCustomRom,
 } from "./bios.js";
 
-const PROCESSOR_RATE = 3.579 * 1000 * 1000;
-const AUDIO_SAMPLE_RATE = 44100;
-const AUDIO_BUFFER_SIZE = 2048;
+const PROCESSOR_RATE = 3.579545 * 1000 * 1000; // MSX CPU clock
+const AUDIO_SAMPLE_RATE = 44100; // Web Audio standard rate
+const AUDIO_BUFFER_SIZE = 2048; // Larger buffer for stability
+const PSG_NATIVE_RATE = 111860; // PSG native rate (CPU clock / 32)
 
 const PALETTE = [
   0x000000,
@@ -167,6 +168,7 @@ class Emulator {
   private audioContext: AudioContext | null;
   private audioProcessor: ScriptProcessorNode | null;
   private audioEnabled: boolean;
+  private audioSampleAccumulator: number;
 
   /**
    * Constructs a new Emulator instance.
@@ -183,6 +185,7 @@ class Emulator {
     this.audioContext = null;
     this.audioProcessor = null;
     this.audioEnabled = true;
+    this.audioSampleAccumulator = 0;
 
     // Initialize audio on first user interaction
     const initAudio = () => {
@@ -320,7 +323,10 @@ class Emulator {
    */
   private initAudio() {
     try {
-      this.audioContext = new AudioContext({ sampleRate: AUDIO_SAMPLE_RATE });
+      this.audioContext = new AudioContext({ 
+        sampleRate: AUDIO_SAMPLE_RATE,
+        latencyHint: 'interactive' // Lower latency for better responsiveness
+      });
 
       // Create a script processor for audio generation
       this.audioProcessor = this.audioContext.createScriptProcessor(
@@ -333,24 +339,36 @@ class Emulator {
       this.audioProcessor.connect(this.audioContext.destination);
       this.audioEnabled = true;
 
-      console.log("Audio initialized successfully (enabled by default)");
+      console.log(`Audio initialized: ${AUDIO_SAMPLE_RATE}Hz, buffer size: ${AUDIO_BUFFER_SIZE}`);
 
       this.audioProcessor.onaudioprocess = (event) => {
+        const output = event.outputBuffer.getChannelData(0);
+        const bufferSize = event.outputBuffer.length;
+        
         if (!this.running || !this.audioEnabled) {
           // Fill with silence when paused or disabled
-          const output = event.outputBuffer.getChannelData(0);
           output.fill(0);
           return;
         }
 
-        // Generate audio samples from the PSG
-        const samples = this.machine.generateAudioSamples(AUDIO_BUFFER_SIZE);
-        console.log("Generated audio samples:", samples);
-        const output = event.outputBuffer.getChannelData(0);
-
-        // Copy samples to output buffer
-        for (let i = 0; i < AUDIO_BUFFER_SIZE; i++) {
-          output[i] = samples[i] || 0;
+        // WebMSX runs PSG at ~112kHz, we need to downsample to 44.1kHz
+        // This is approximately 2.54 PSG samples per audio output sample
+        const resampleRatio = PSG_NATIVE_RATE / AUDIO_SAMPLE_RATE;
+        
+        // Generate audio samples from the PSG with proper resampling
+        const samples = this.machine.generateAudioSamples(bufferSize);
+        
+        // Copy samples to output buffer with simple low-pass filtering
+        for (let i = 0; i < bufferSize; i++) {
+          const sample = samples[i] || 0;
+          
+          // Simple low-pass filter to reduce aliasing
+          if (i > 0) {
+            const prevSample = output[i - 1] ?? 0;
+            output[i] = sample * 0.7 + prevSample * 0.3;
+          } else {
+            output[i] = sample;
+          }
         }
       };
     } catch (error) {

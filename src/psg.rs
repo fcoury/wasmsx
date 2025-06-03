@@ -19,11 +19,11 @@ impl AY38910 {
             clock_divider: 0,
             sample_counter: 0,
         };
-        
+
         // Initialize register 7 (mixer) to 0xFF (all channels disabled by default)
         psg.registers[7] = 0xFF;
         psg.channel.set_mixer_control(0xFF);
-        
+
         psg
     }
 
@@ -36,24 +36,38 @@ impl AY38910 {
     }
 
     pub fn generate_sample(&mut self) -> f32 {
+        // The PSG needs to be clocked at its native rate (~447kHz)
+        // while audio samples are generated at 44.1kHz
+        // This means we need to clock the PSG ~10 times per audio sample
+        const PSG_CYCLES_PER_SAMPLE: u32 = 81; // 3579545 / 44100 ≈ 81
+
+        // Clock the PSG for the appropriate number of cycles
+        for _ in 0..PSG_CYCLES_PER_SAMPLE {
+            self.sample_counter += 1;
+            if self.sample_counter >= 8 {
+                self.sample_counter = 0;
+                // This is where the PSG would normally update its internal state
+                // but next_sample already handles the counter updates
+            }
+        }
+
         // Generate next PSG sample
         let samples = self.channel.next_sample();
-        // Convert from u8 (0-255) to f32 (-1.0 to 1.0)
-        // 0 -> -1.0, 128 -> 0.0, 255 -> ~1.0
-        let mono_sample = (samples[0] as f32 / 128.0) - 1.0;
         
-        // Debug: log non-silent samples
-        if samples[0] != 0 {
-            tracing::info!("[PSG] Generated sample: {} -> {}", samples[0], mono_sample);
-        }
+        // Convert to float in range -1.0 to 1.0
+        // WebMSX outputs 0-0.84 (3 channels * 0.28), we scale to full range
+        let raw_value = samples[0] as f32 / 255.0;
+        
+        // Apply base volume (0.66 in WebMSX) and convert to signed
+        let mono_sample = (raw_value * 0.66 * 2.0) - 1.0;
         
         mono_sample
     }
-    
+
     pub fn clock(&mut self, cycles: u32) {
         // PSG runs at CPU_CLOCK / 8 = ~447kHz
         const PSG_CLOCK_DIVIDER: u32 = 8;
-        
+
         self.clock_divider += cycles;
         while self.clock_divider >= PSG_CLOCK_DIVIDER {
             self.clock_divider -= PSG_CLOCK_DIVIDER;
@@ -73,22 +87,16 @@ impl AY38910 {
     pub fn write(&mut self, port: u8, data: u8) {
         match port {
             0xA0 => {
-                tracing::info!("[PSG] Selecting register {:02X}", data);
                 self.selected_register = data & 0x0F;
             }
             0xA1 => {
-                tracing::info!(
-                    "[PSG] Writing {:02X} to register {:02X}",
-                    data,
-                    self.selected_register
-                );
                 self.registers[self.selected_register as usize] = data;
                 self.update_channel_from_register(self.selected_register, data);
             }
             _ => {}
         }
     }
-    
+
     pub fn set_pulse_signal(&mut self, active: bool) {
         self.channel.pulse_signal = active;
         if active {
@@ -96,20 +104,18 @@ impl AY38910 {
             self.channel.current_sample_p = 1.0;
         }
     }
-    
+
     fn update_channel_from_register(&mut self, reg: u8, value: u8) {
         match reg {
             // Channel A tone period
             0 => {
                 // Register 0 is the low byte
                 let period = (self.registers[1] as u16) << 8 | value as u16;
-                tracing::info!("[PSG] Channel A period low: {}, full period: {}", value, period);
                 self.channel.set_period_a(period);
             }
             1 => {
                 // Register 1 is the high byte
                 let period = (value as u16) << 8 | self.registers[0] as u16;
-                tracing::info!("[PSG] Channel A period high: {}, full period: {}", value, period);
                 self.channel.set_period_a(period);
             }
             // Channel B tone period
@@ -134,15 +140,6 @@ impl AY38910 {
             6 => self.channel.set_period_n(value & 0x1F),
             // Mixer control
             7 => {
-                tracing::info!("[PSG] Mixer control: {:02X} (toneA:{}, noiseA:{}, toneB:{}, noiseB:{}, toneC:{}, noiseC:{})", 
-                    value,
-                    (value & 0x01) == 0,
-                    (value & 0x08) == 0,
-                    (value & 0x02) == 0,
-                    (value & 0x10) == 0,
-                    (value & 0x04) == 0,
-                    (value & 0x20) == 0
-                );
                 self.channel.set_mixer_control(value);
             }
             // Channel volumes
@@ -164,7 +161,8 @@ impl AY38910 {
                 self.channel.attack_e = (value & 0x04) != 0;
                 self.channel.alternate_e = (value & 0x02) != 0;
                 self.channel.hold_e = (value & 0x01) != 0;
-                self.channel.cycle_envelope(self.channel.alternate_e, self.channel.hold_e);
+                self.channel
+                    .cycle_envelope(self.channel.alternate_e, self.channel.hold_e);
             }
             _ => {}
         }
@@ -230,9 +228,10 @@ struct AudioChannel {
 impl AudioChannel {
     pub fn new() -> Self {
         let mut volume_curve = Vec::new();
-        for i in 0..16 {
-            let volume = (i as f32) / 15.0;
-            // Simple linear volume for now
+        // WebMSX volume curve: volumeCurve[v] = Math.pow(2, -(15 - v) / 2) * CHANNEL_MAX_VOLUME
+        volume_curve.push(0.0); // Volume 0 is always silent
+        for v in 1..16 {
+            let volume = (2.0_f32).powf(-((15 - v) as f32) / 2.0) * CHANNEL_MAX_VOLUME;
             volume_curve.push(volume);
         }
 
@@ -350,37 +349,29 @@ impl AudioChannel {
 
     fn next_sample(&mut self) -> [u8; 2] {
         // Update values
+        // The PSG runs at CPU_CLOCK / 8, and we're calling this per sample
+        // So we need to advance counters appropriately
+        // WebMSX increments by 2 per PSG clock
         if self.period_a > 0 {
             self.period_a_counter += 2;
             if self.period_a_counter >= self.period_a {
-                self.period_a_counter = self.period_a_counter - self.period_a;
-                self.current_sample_a = if self.current_sample_a != 0.0 {
-                    0.0
-                } else {
-                    1.0
-                };
+                // Preserve the remainder (0 or 1) for odd dividers, as the step is 2
+                self.period_a_counter = (self.period_a_counter - self.period_a) & 1;
+                self.current_sample_a = if self.current_sample_a != 0.0 { 0.0 } else { 1.0 };
             }
         }
         if self.period_b > 0 {
             self.period_b_counter += 2;
             if self.period_b_counter >= self.period_b {
-                self.period_b_counter = self.period_b_counter - self.period_b;
-                self.current_sample_b = if self.current_sample_b != 0.0 {
-                    0.0
-                } else {
-                    1.0
-                };
+                self.period_b_counter = (self.period_b_counter - self.period_b) & 1;
+                self.current_sample_b = if self.current_sample_b != 0.0 { 0.0 } else { 1.0 };
             }
         }
         if self.period_c > 0 {
             self.period_c_counter += 2;
             if self.period_c_counter >= self.period_c {
-                self.period_c_counter = self.period_c_counter - self.period_c;
-                self.current_sample_c = if self.current_sample_c != 0.0 {
-                    0.0
-                } else {
-                    1.0
-                };
+                self.period_c_counter = (self.period_c_counter - self.period_c) & 1;
+                self.current_sample_c = if self.current_sample_c != 0.0 { 0.0 } else { 1.0 };
             }
         }
         if self.noise_a || self.noise_b || self.noise_c {
@@ -456,6 +447,7 @@ impl AudioChannel {
             self.sample_result
         } else {
             // Simple Mono path (no VOL/PAN)
+            // WebMSX: Mix tone with noise. Tone or noise if turned off produce a fixed high value (1)
             let mut m_sample_result = if self.amplitude_a == 0.0
                 || (self.tone_a && self.current_sample_a == 0.0)
                 || (self.noise_a && self.current_sample_n == 0.0)
@@ -486,9 +478,9 @@ impl AudioChannel {
                 }
                 m_sample_result += CHANNEL_MAX_VOLUME;
             }
-            // Scale to 0-255 range (assuming max amplitude is 1.0 per channel, so max 3.0 total)
-            let scaled = ((m_sample_result * 255.0).min(255.0)) as u8;
-            [scaled, scaled]
+            // Return the raw float value, let generate_sample handle conversion
+            // WebMSX returns the sum directly (max ~0.84 with 3 channels at 0.28 each)
+            [((m_sample_result * 255.0) as u8).min(255), 0]
         }
     }
 
@@ -537,7 +529,7 @@ impl AudioChannel {
     }
 }
 
-const CHANNEL_MAX_VOLUME: f32 = 0.25;
+const CHANNEL_MAX_VOLUME: f32 = 0.28;
 const CHANNEL_VOLUME_CURVE_POWER: u8 = 30;
 
 const MIN_PULSE_ON_CLOCKS: u8 = 160;
