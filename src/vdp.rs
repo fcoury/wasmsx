@@ -386,8 +386,15 @@ impl TMS9918 {
             
             // Get sprite pattern data
             let pattern_offset = if sprite_size == 16 {
-                // 16x16 sprites use 32 bytes
-                (sprite.pattern as usize & 0xFC) * 8 + sprite_line
+                // 16x16 sprites use 32 bytes, organized in quadrants
+                // 0-7: top-left, 8-15: bottom-left, 16-23: top-right, 24-31: bottom-right
+                if sprite_line < 8 {
+                    // Top left quadrant
+                    (sprite.pattern as usize & 0xFC) * 8 + sprite_line
+                } else {
+                    // Bottom left quadrant
+                    (sprite.pattern as usize & 0xFC) * 8 + 8 + (sprite_line - 8)
+                }
             } else {
                 // 8x8 sprites use 8 bytes
                 sprite.pattern as usize * 8 + sprite_line
@@ -414,9 +421,19 @@ impl TMS9918 {
                 }
             }
             
-            // For 16x16 sprites, render the second half
-            if sprite_size == 16 && sprite_line < 8 {
-                let pattern_data_2 = self.vram[spt_addr + pattern_offset + 16];
+            // For 16x16 sprites, render the right half
+            if sprite_size == 16 {
+                // For 16x16 sprites, pattern memory layout is:
+                // 0-7: top-left, 8-15: bottom-left, 16-23: top-right, 24-31: bottom-right
+                let right_offset = if sprite_line < 8 {
+                    // Top right quadrant
+                    spt_addr + (sprite.pattern as usize & 0xFC) * 8 + 16 + sprite_line
+                } else {
+                    // Bottom right quadrant  
+                    spt_addr + (sprite.pattern as usize & 0xFC) * 8 + 24 + (sprite_line - 8)
+                };
+                
+                let pattern_data_2 = self.vram[right_offset];
                 
                 for bit in 0..8 {
                     let pixel_set = (pattern_data_2 & (0x80 >> bit)) != 0;
