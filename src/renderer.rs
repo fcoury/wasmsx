@@ -167,23 +167,39 @@ impl<'a> Renderer<'a> {
         let color_table = self.vdp.color_table();
 
         let pattern_row = line % 8;
-        let name_row = (line / 8) * 32;
+        let char_row = line / 8;  // Which character row (0-23)
+        let name_offset = char_row * 32;  // Offset into name table
         let mut pixel_ptr = line * 256;
 
-        // Screen 2 divides the screen into 3 banks of 8 rows each
-        let bank = (line / 64) & 0x03;
+        // Screen 2 divides the screen into 3 banks (thirds) of 8 character rows each
+        // Bank 0: lines 0-63 (character rows 0-7)
+        // Bank 1: lines 64-127 (character rows 8-15)
+        // Bank 2: lines 128-191 (character rows 16-23)
+        let bank = (line / 64) as usize;  // 0, 1, or 2
 
         for x in 0..32 {
-            let name_index = name_row + x;
-            let char_code = self.vdp.vram[name_table_base + name_index];
+            let name_index = name_offset + x;
+            let char_code = self.vdp.vram[name_table_base + name_index] as usize;
             
-            // In screen 2, pattern and color tables are divided into 3 banks
-            let pattern_index = (bank * 2048) + (char_code as usize * 8) + pattern_row;
-            let pattern = pattern_table[pattern_index];
+            // In Screen 2, pattern/color tables are organized differently:
+            // Each bank (third of screen) can use different pattern definitions for the same character
+            // The effective character code in the pattern table is: char_code + (bank * 256)
+            // But since pattern table only has 256 entries per bank, we wrap at 256
+            let effective_char = char_code & 0xFF;  // Ensure we stay within 0-255
+            let pattern_index = (bank * 2048) + (effective_char * 8) + pattern_row;
+            let pattern = if pattern_index < pattern_table.len() {
+                pattern_table[pattern_index]
+            } else {
+                0
+            };
 
-            // Color table has same structure as pattern table in screen 2
-            let color_index = (bank * 2048) + (char_code as usize * 8) + pattern_row;
-            let color = color_table[color_index];
+            // Color table has same structure as pattern table in Screen 2
+            let color_index = (bank * 2048) + (effective_char * 8) + pattern_row;
+            let color = if color_index < color_table.len() {
+                color_table[color_index]
+            } else {
+                0x1F  // Default to white on black if out of bounds
+            };
             let fg = (color >> 4) & 0x0F;
             let bg = color & 0x0F;
 

@@ -176,10 +176,10 @@ impl TMS9918 {
 
     pub fn name_table_base_and_size(&self) -> (usize, usize) {
         match self.display_mode {
-            DisplayMode::Text1 => (0x0000, 960),
-            DisplayMode::Graphic1 => (0x1800, 768),
-            DisplayMode::Graphic2 => (0x1800, 768),
-            DisplayMode::Multicolor => (0x0800, 768),
+            DisplayMode::Text1 => (self.layout_table_address as usize, 960),
+            DisplayMode::Graphic1 => (self.layout_table_address as usize, 768),
+            DisplayMode::Graphic2 => (self.layout_table_address as usize, 768),
+            DisplayMode::Multicolor => (self.layout_table_address as usize, 768),
         }
     }
 
@@ -745,7 +745,8 @@ impl TMS9918 {
                             if (val_r3 & 0x80) != 0 { 0x2000 } else { 0x0000 };
                     }
                     DisplayMode::Graphic2 => {
-                        self.color_table_address = ((val_r3 as u16) << 6) & 0x3FC0;
+                        // In Screen 2, color table can only be at 0x0000 or 0x2000
+                        self.color_table_address = if (val_r3 & 0x80) != 0 { 0x2000 } else { 0x0000 };
                     }
                     DisplayMode::Text1 | DisplayMode::Multicolor => {
                         self.color_table_address = 0x0000;
@@ -765,9 +766,11 @@ impl TMS9918 {
     }
 
     fn update_layout_table_address(&mut self) {
-        let add = self.registers[2] as i16 & 0x7f << 10;
+        let add = ((self.registers[2] as i16) & 0x7f) << 10;
         self.layout_table_address = (add & -1024) as u16; // -1024 is 0xFFFFFC00, effectively (add & 0xFC00) when masked
         self.layout_table_address_mask_set_value = (add | LAYOUT_TABLE_ADDRESS_MASK_BASE) as u16;
+        
+        info!("[VDP] Name table address updated to: 0x{:04X}", self.layout_table_address);
     }
 
     fn update_pattern_table_address(&mut self, val: u8) {
