@@ -271,11 +271,96 @@ class Emulator {
   }
 }
 
+class DiskController {
+  private machine: Machine;
+  private diskEnabled: boolean = false;
+  private mountedDisks: Map<number, string> = new Map();
+
+  constructor(machine: Machine) {
+    this.machine = machine;
+    this.setupEventListeners();
+  }
+
+  private setupEventListeners() {
+    // Setup listeners for both drives
+    for (let drive = 0; drive < 2; drive++) {
+      const mountButton = document.getElementById(`drive-${drive}-mount`);
+      const ejectButton = document.getElementById(`drive-${drive}-eject`);
+      const fileInput = document.getElementById(`drive-${drive}-file`) as HTMLInputElement;
+
+      mountButton?.addEventListener('click', () => {
+        fileInput.click();
+      });
+
+      ejectButton?.addEventListener('click', () => {
+        this.ejectDisk(drive);
+      });
+
+      fileInput?.addEventListener('change', (event) => {
+        const file = (event.target as HTMLInputElement).files?.[0];
+        if (file) {
+          this.mountDisk(drive, file);
+        }
+      });
+    }
+  }
+
+  private async mountDisk(drive: number, file: File) {
+    try {
+      // Enable disk system if not already enabled
+      if (!this.diskEnabled) {
+        this.machine.enableDiskSystem();
+        this.diskEnabled = true;
+      }
+
+      // Read the file
+      const arrayBuffer = await file.arrayBuffer();
+      const data = new Uint8Array(arrayBuffer);
+
+      // Insert the disk
+      this.machine.insertDisk(drive, data, file.name);
+      this.mountedDisks.set(drive, file.name);
+
+      // Update UI
+      this.updateDriveStatus(drive, file.name);
+    } catch (error) {
+      console.error(`Failed to mount disk in drive ${drive}:`, error);
+      alert(`Failed to mount disk: ${error}`);
+    }
+  }
+
+  private ejectDisk(drive: number) {
+    if (this.mountedDisks.has(drive)) {
+      this.machine.ejectDisk(drive);
+      this.mountedDisks.delete(drive);
+      this.updateDriveStatus(drive, null);
+    }
+  }
+
+  private updateDriveStatus(drive: number, filename: string | null) {
+    const statusElement = document.getElementById(`drive-${drive}-status`);
+    const ejectButton = document.getElementById(`drive-${drive}-eject`) as HTMLButtonElement;
+
+    if (statusElement && ejectButton) {
+      if (filename) {
+        statusElement.textContent = filename;
+        statusElement.classList.add('mounted');
+        ejectButton.disabled = false;
+      } else {
+        statusElement.textContent = 'Empty';
+        statusElement.classList.remove('mounted');
+        ejectButton.disabled = true;
+      }
+    }
+  }
+}
+
 function main() {
   const machine = new Machine(ROMS.hotbit);
   const emulator = new Emulator(machine);
   const renderer = new Renderer({ width: 256, height: 192 });
   const app = new App(renderer, emulator);
+  const diskController = new DiskController(machine);
   let lastTime = Date.now();
 
   window.addEventListener("keydown", (e) => {

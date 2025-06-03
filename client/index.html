@@ -19,6 +19,25 @@
   <div class="container">
     <div class="display">
       <canvas id="screen"></canvas>
+      <div class="controls">
+        <div class="disk-controls">
+          <h3>Disk Drives</h3>
+          <div class="drive" id="drive-0">
+            <div class="drive-label">Drive A:</div>
+            <div class="drive-status" id="drive-0-status">Empty</div>
+            <input type="file" id="drive-0-file" accept=".dsk,.di,.dmk" style="display: none">
+            <button class="drive-button" id="drive-0-mount">Mount</button>
+            <button class="drive-button" id="drive-0-eject" disabled>Eject</button>
+          </div>
+          <div class="drive" id="drive-1">
+            <div class="drive-label">Drive B:</div>
+            <div class="drive-status" id="drive-1-status">Empty</div>
+            <input type="file" id="drive-1-file" accept=".dsk,.di,.dmk" style="display: none">
+            <button class="drive-button" id="drive-1-mount">Mount</button>
+            <button class="drive-button" id="drive-1-eject" disabled>Eject</button>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="info">
       <div id="state" class="state"></div>
