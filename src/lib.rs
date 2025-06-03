@@ -208,9 +208,21 @@ impl JsMachine {
     pub fn generate_audio_samples(&mut self, sample_count: usize) -> Float32Array {
         let mut samples = Vec::with_capacity(sample_count);
         
-        // Generate audio samples
+        // Check if PSG has enough samples buffered
+        let mut bus = self.0.bus.borrow_mut();
+        
+        // If we don't have enough samples, run the emulation to generate more
+        while !bus.psg.has_samples(sample_count) {
+            // Run emulation for a short period to generate audio samples
+            // At 3.579545 MHz and 44100 Hz sample rate, we need ~81 CPU cycles per sample
+            drop(bus); // Release the borrow
+            self.0.step_for(sample_count * 100); // Run extra cycles to ensure buffer fills
+            bus = self.0.bus.borrow_mut();
+        }
+        
+        // Collect samples from the PSG buffer
         for _ in 0..sample_count {
-            let sample = self.0.bus.borrow_mut().psg.generate_sample();
+            let sample = bus.psg.get_audio_sample();
             samples.push(sample);
         }
         

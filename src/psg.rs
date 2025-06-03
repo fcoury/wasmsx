@@ -8,6 +8,10 @@ pub struct AY38910 {
     channel: AudioChannel,
     clock_divider: u32,
     sample_counter: u32,
+    // Resampling buffer for 112kHz to 44.1kHz conversion
+    resample_buffer: Vec<f32>,
+    resample_accumulator: f32,
+    resample_cycles: u32,
 }
 
 impl AY38910 {
@@ -18,6 +22,9 @@ impl AY38910 {
             channel: AudioChannel::new(),
             clock_divider: 0,
             sample_counter: 0,
+            resample_buffer: Vec::with_capacity(4096),
+            resample_accumulator: 0.0,
+            resample_cycles: 0,
         };
 
         // Initialize register 7 (mixer) to 0xFF (all channels disabled by default)
@@ -33,46 +40,69 @@ impl AY38910 {
         self.channel.reset();
         self.clock_divider = 0;
         self.sample_counter = 0;
+        self.resample_buffer.clear();
+        self.resample_accumulator = 0.0;
+        self.resample_cycles = 0;
     }
 
-    pub fn generate_sample(&mut self) -> f32 {
-        // The PSG needs to be clocked at its native rate (~447kHz)
-        // while audio samples are generated at 44.1kHz
-        // This means we need to clock the PSG ~10 times per audio sample
-        const PSG_CYCLES_PER_SAMPLE: u32 = 81; // 3579545 / 44100 ≈ 81
-
-        // Clock the PSG for the appropriate number of cycles
-        for _ in 0..PSG_CYCLES_PER_SAMPLE {
-            self.sample_counter += 1;
-            if self.sample_counter >= 8 {
-                self.sample_counter = 0;
-                // This is where the PSG would normally update its internal state
-                // but next_sample already handles the counter updates
-            }
+    // Get next audio sample from the resample buffer
+    pub fn get_audio_sample(&mut self) -> f32 {
+        if !self.resample_buffer.is_empty() {
+            self.resample_buffer.remove(0)
+        } else {
+            0.0
         }
-
-        // Generate next PSG sample
-        let samples = self.channel.next_sample();
-        
-        // Convert to float in range -1.0 to 1.0
-        // WebMSX outputs 0-0.84 (3 channels * 0.28), we scale to full range
-        let raw_value = samples[0] as f32 / 255.0;
-        
-        // Apply base volume (0.66 in WebMSX) and convert to signed
-        let mono_sample = (raw_value * 0.66 * 2.0) - 1.0;
-        
-        mono_sample
+    }
+    
+    // Check if we have enough samples in the buffer
+    pub fn has_samples(&self, count: usize) -> bool {
+        self.resample_buffer.len() >= count
     }
 
     pub fn clock(&mut self, cycles: u32) {
-        // PSG runs at CPU_CLOCK / 8 = ~447kHz
+        // PSG runs at CPU_CLOCK / 8 = ~447kHz for internal updates
+        // PSG generates samples at CPU_CLOCK / 32 = ~112kHz
         const PSG_CLOCK_DIVIDER: u32 = 8;
+        const PSG_SAMPLE_DIVIDER: u32 = 32;
+        
+        // Constants for resampling from 112kHz to 44.1kHz
+        const CPU_CLOCK: u32 = 3_579_545;
+        const PSG_NATIVE_RATE: u32 = CPU_CLOCK / PSG_SAMPLE_DIVIDER; // ~112kHz
+        const AUDIO_SAMPLE_RATE: u32 = 44100;
 
         self.clock_divider += cycles;
+        self.resample_cycles += cycles;
+        
+        // Update PSG internal state
         while self.clock_divider >= PSG_CLOCK_DIVIDER {
             self.clock_divider -= PSG_CLOCK_DIVIDER;
-            // Clock the internal audio channel
-            // This is where timing-sensitive updates would happen
+            // The channel's next_sample method updates counters internally
+        }
+        
+        // Generate samples at PSG native rate (112kHz)
+        while self.resample_cycles >= PSG_SAMPLE_DIVIDER {
+            self.resample_cycles -= PSG_SAMPLE_DIVIDER;
+            
+            // Generate next PSG sample
+            let samples = self.channel.next_sample();
+            
+            // Convert to float in range -1.0 to 1.0
+            let raw_value = samples[0] as f32 / 255.0;
+            let mono_sample = (raw_value * 0.66 * 2.0) - 1.0;
+            
+            // Resample from 112kHz to 44.1kHz
+            // PSG_NATIVE_RATE / AUDIO_SAMPLE_RATE ≈ 2.54
+            self.resample_accumulator += AUDIO_SAMPLE_RATE as f32 / PSG_NATIVE_RATE as f32;
+            
+            while self.resample_accumulator >= 1.0 {
+                self.resample_accumulator -= 1.0;
+                self.resample_buffer.push(mono_sample);
+                
+                // Prevent buffer from growing too large
+                if self.resample_buffer.len() > 8192 {
+                    self.resample_buffer.drain(0..4096);
+                }
+            }
         }
     }
 
