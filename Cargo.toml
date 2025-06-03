@@ -8,6 +8,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 anyhow = "1.0.70"
+console_error_panic_hook = "0.1.6"
 derivative = "2.2.0"
 js-sys = "0.3.61"
 serde = {version = "1.0.159", features = ["derive"]}

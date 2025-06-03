@@ -10,6 +10,7 @@ pub struct Ppi {
     control: u8,
 
     keyboard_row_selected: u8,
+    slot_config_log_counter: u32,
 }
 
 impl Ppi {
@@ -18,7 +19,7 @@ impl Ppi {
     }
 
     pub fn reset(&mut self) {
-        self.register_c = 0x50; // Everything OFF. Motor and CapsLed = 1 means OFF
+        self.register_c = 0x70; // Everything OFF. Motor bits 4,5 and CapsLed bit 6 = 1 means OFF
         self.keyboard_row_selected = 0;
         self.update_pulse_signal();
         self.update_caps_led();
@@ -30,6 +31,10 @@ impl Ppi {
 
     pub fn key_up(&mut self, key: String) {
         self.keyboard.key_up(key);
+    }
+
+    pub fn register_c(&self) -> u8 {
+        self.register_c
     }
 
     fn update_pulse_signal(&self) {
@@ -79,9 +84,45 @@ impl Ppi {
     pub fn write(&mut self, port: u8, value: u8) {
         match port {
             0xA8 => {
-                // info!("[PPI] [WR] [PrimarySlot] [{:02X}] = {:02X}", port, value);
                 // set primary slot config
+                let old_config = self.primary_slot_config;
                 self.primary_slot_config = value;
+
+                if (old_config & 0b00001100) != (value & 0b00001100) {
+                    // Log if Page 1 slot changes
+                    // tracing::info!(
+                    //     "[PPI] Primary slot config (Port A8 Write): Old {:02X} -> New {:02X} (Page0:{} Page1:{} Page2:{} Page3:{})",
+                    //     old_config, value,
+                    //     value & 0x03, (value >> 2) & 0x03,
+                    //     (value >> 4) & 0x03, (value >> 6) & 0x03
+                    // );
+                }
+
+                // if old_config != value {
+                //     let page1_slot = (value >> 2) & 0x03;
+                //
+                //     // Rate limit the logging - assuming ~3.5MHz Z80 and this being called frequently
+                //     // Log approximately once every 30 seconds (very rough approximation)
+                //     self.slot_config_log_counter += 1;
+                //     if self.slot_config_log_counter >= 10000 {
+                //         self.slot_config_log_counter = 0;
+                //         tracing::info!(
+                //             "[PPI] Primary slot config: {:02X} -> {:02X} (Page3:{} Page2:{} Page1:{} Page0:{})",
+                //             old_config,
+                //             value,
+                //             (value >> 6) & 0x03,
+                //             (value >> 4) & 0x03,
+                //             page1_slot,
+                //             value & 0x03
+                //         );
+                //     }
+                //
+                //     if page1_slot == 1 {
+                //         tracing::trace!(
+                //             "[PPI] Slot 1 (Disk ROM) now mapped to page 1 (0x4000-0x7FFF)"
+                //         );
+                //     }
+                // }
             }
             0xA9 => {
                 // this port is ignored as output -- input only
@@ -92,10 +133,27 @@ impl Ppi {
                 if modf == 0x00 {
                     return;
                 }
+                let old_register_c = self.register_c;
                 self.register_c = value;
+
+                // Log motor control bit changes
+                if modf & 0x30 != 0 {
+                    tracing::info!(
+                        "[PPI] Port AA (PortC Write): {:02X}. RegC: {:02X} -> {:02X}. DriveA Motor: {}, DriveB Motor: {}",
+                        value,
+                        old_register_c,
+                        self.register_c,
+                        if (self.register_c & 0x10) == 0 { "ON" } else { "OFF" },
+                        if (self.register_c & 0x20) == 0 { "ON" } else { "OFF" }
+                    );
+                }
 
                 if modf & 0x0f != 0 {
                     self.update_keyboard_config();
+                }
+
+                if modf & 0x40 != 0 {
+                    self.update_caps_led();
                 }
 
                 // var bit = (val & 0x0e) >>> 1;
@@ -108,17 +166,34 @@ impl Ppi {
             }
             0xAB => {
                 let bit = (value & 0x0e) >> 1;
-                tracing::trace!(
-                    "[PPI] [WR] [Port AB    ] [{:02X}] = {:02X} bit {}",
-                    port,
-                    value,
-                    bit
-                );
-                //       info!("[PPI] [WR] [PpiControl2] [{:02X}] = {:02X}", port, value);
+                let old_register_c = self.register_c;
+
                 if (value & 0x01) == 0 {
                     self.register_c &= !(1 << bit);
                 } else {
                     self.register_c |= 1 << bit;
+                }
+
+                // Log motor control bit changes (bits 4 and 5)
+                if bit == 4 || bit == 5 {
+                    let op = if (value & 0x01) == 0 { "CLEAR" } else { "SET" };
+                    tracing::info!(
+                        "[PPI] Port AB (Bit Set/Reset): Value {:02X} (bit {}, {}). RegC: {:02X} -> {:02X}. DriveA Motor: {}, DriveB Motor: {}",
+                        value,
+                        bit,
+                        op,
+                        old_register_c,
+                        self.register_c,
+                        if (self.register_c & 0x10) == 0 { "ON" } else { "OFF" },
+                        if (self.register_c & 0x20) == 0 { "ON" } else { "OFF" }
+                    );
+                } else {
+                    tracing::trace!(
+                        "[PPI] [WR] [Port AB    ] [{:02X}] = {:02X} bit {}",
+                        port,
+                        value,
+                        bit
+                    );
                 }
 
                 match bit {
@@ -155,10 +230,11 @@ impl Default for Ppi {
             keyboard: Keyboard::new(),
             primary_slot_config: 0,
             register_b: 0,
-            register_c: 0x50, // Everything OFF. Motor and CapsLed = 1 means OFF
+            register_c: 0x70, // Everything OFF. Motor bits 4,5 and CapsLed bit 6 = 1 means OFF
             control: 0,
 
             keyboard_row_selected: 0,
+            slot_config_log_counter: 0,
         }
     }
 }

@@ -3,7 +3,7 @@ import ROMS from "./roms.js";
 
 await init();
 
-const machine = new Machine(ROMS.hotbit);
+const machine = new Machine(ROMS.expert);
 
 let running = false;
 let lastTime = window.performance.now();
@@ -40,7 +40,7 @@ window.addEventListener("keydown", (e) => {
         const value = data[i + j];
         row.push(value.toString(16).padStart(2, "0"));
         chars.push(
-          value >= 32 && value <= 126 ? String.fromCharCode(value) : "."
+          value >= 32 && value <= 126 ? String.fromCharCode(value) : ".",
         );
       }
       rows.push(row.join(" ") + "  " + chars.join(""));

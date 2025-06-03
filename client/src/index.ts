@@ -13,6 +13,7 @@
 import init, { Machine } from "../pkg/wasmsx.js";
 import ROMS from "./roms.js";
 import { SystemManager } from "./diskrom.js";
+import { BIOS_OPTIONS, getBiosById, setCustomRom, hasCustomRom } from "./bios.js";
 
 const PROCESSOR_RATE = 3.579 * 1000 * 1000;
 const PALETTE = [
@@ -253,7 +254,7 @@ class Emulator {
    * @returns {boolean} Whether the key was handled
    */
   public keyDown(key: string): boolean {
-    console.log("key", key);
+    // console.log("key", key);
     return false;
   }
 
@@ -276,13 +277,40 @@ class DiskController {
   private machine: Machine;
   private diskEnabled: boolean = false;
   private mountedDisks: Map<number, string> = new Map();
+  private eventListeners: Array<
+    { element: Element; event: string; handler: EventListener }
+  > = [];
+  private systemHasDiskSupport: boolean = false;
 
-  constructor(machine: Machine) {
+  constructor(machine: Machine, hasDiskSupport: boolean = false) {
+    console.log(
+      `DiskController initialized with machine: ${machine}, hasDiskSupport: ${hasDiskSupport}`,
+    );
     this.machine = machine;
+    this.systemHasDiskSupport = hasDiskSupport;
+    this.diskEnabled = hasDiskSupport; // If loaded with disk ROM, FDC is already enabled
     this.setupEventListeners();
   }
 
+  public updateMachine(machine: Machine, hasDiskSupport: boolean) {
+    this.machine = machine;
+    this.systemHasDiskSupport = hasDiskSupport;
+    this.diskEnabled = hasDiskSupport;
+    // No need to enable disk system again if loaded with disk ROM
+  }
+
+  public cleanup() {
+    // Remove all event listeners
+    this.eventListeners.forEach(({ element, event, handler }) => {
+      element.removeEventListener(event, handler);
+    });
+    this.eventListeners = [];
+  }
+
   private setupEventListeners() {
+    // Clean up any existing listeners first
+    this.cleanup();
+
     // Setup listeners for both drives
     for (let drive = 0; drive < 2; drive++) {
       const mountButton = document.getElementById(`drive-${drive}-mount`);
@@ -291,27 +319,56 @@ class DiskController {
         `drive-${drive}-file`,
       ) as HTMLInputElement;
 
-      mountButton?.addEventListener("click", () => {
-        fileInput.click();
-      });
+      if (mountButton && fileInput) {
+        const mountHandler = () => {
+          fileInput.click();
+        };
+        mountButton.addEventListener("click", mountHandler);
+        this.eventListeners.push({
+          element: mountButton,
+          event: "click",
+          handler: mountHandler,
+        });
+      }
 
-      ejectButton?.addEventListener("click", () => {
-        this.ejectDisk(drive);
-      });
+      if (ejectButton) {
+        const ejectHandler = () => {
+          this.ejectDisk(drive);
+        };
+        ejectButton.addEventListener("click", ejectHandler);
+        this.eventListeners.push({
+          element: ejectButton,
+          event: "click",
+          handler: ejectHandler,
+        });
+      }
 
-      fileInput?.addEventListener("change", (event) => {
-        const file = (event.target as HTMLInputElement).files?.[0];
-        if (file) {
-          this.mountDisk(drive, file);
-        }
-      });
+      if (fileInput) {
+        const changeHandler = (event: Event) => {
+          const file = (event.target as HTMLInputElement).files?.[0];
+          if (file) {
+            this.mountDisk(drive, file);
+          }
+        };
+        fileInput.addEventListener("change", changeHandler);
+        this.eventListeners.push({
+          element: fileInput,
+          event: "change",
+          handler: changeHandler,
+        });
+      }
     }
   }
 
   private async mountDisk(drive: number, file: File) {
     try {
-      // Enable disk system if not already enabled
-      if (!this.diskEnabled) {
+      console.log(
+        `Mounting disk in drive ${drive}, system has disk support: ${this.systemHasDiskSupport}`,
+      );
+
+      // Only enable disk system if we don't have disk ROM support
+      if (!this.diskEnabled && !this.systemHasDiskSupport) {
+        console.log("Enabling disk system (no disk ROM loaded)");
         this.machine.enableDiskSystem();
         this.diskEnabled = true;
       }
@@ -365,7 +422,7 @@ let currentEmulator: Emulator | null = null;
 let currentDiskController: DiskController | null = null;
 let animationId: number | null = null;
 
-function setupMachine(machine: Machine) {
+function setupMachine(machine: Machine, isRestart: boolean = false) {
   // Cancel any existing animation frame
   if (animationId !== null) {
     cancelAnimationFrame(animationId);
@@ -375,13 +432,26 @@ function setupMachine(machine: Machine) {
   const emulator = new Emulator(machine);
   const renderer = new Renderer({ width: 256, height: 192 });
   const app = new App(renderer, emulator);
-  const diskController = new DiskController(machine);
-  
+
+  // Get disk support status from SystemManager
+  const systemManager = SystemManager.getInstance();
+  const hasDiskSupport = systemManager.hasDiskSupport();
+
+  console.log(
+    `Setting up machine with disk support: ${hasDiskSupport}, isRestart: ${isRestart}`,
+  );
+
+  // Reuse existing DiskController on restart, create new one on initial setup
+  if (currentDiskController) {
+    currentDiskController.updateMachine(machine, hasDiskSupport);
+  } else {
+    currentDiskController = new DiskController(machine, hasDiskSupport);
+  }
+
   // Store references
   currentApp = app;
   currentEmulator = emulator;
-  currentDiskController = diskController;
-  
+
   let lastTime = Date.now();
 
   // Note: Event listeners will accumulate, but this is okay for our use case
@@ -422,18 +492,133 @@ function setupMachine(machine: Machine) {
   animationId = requestAnimationFrame(frame);
 }
 
-function main() {
-  // Initialize with BIOS ROM
-  const systemManager = SystemManager.getInstance(ROMS.expert);
-  
+async function setupBiosSelector() {
+  const biosSelector = document.getElementById(
+    "bios-selector",
+  ) as HTMLSelectElement;
+  const restartButton = document.getElementById(
+    "bios-restart",
+  ) as HTMLButtonElement;
+  const biosFileInput = document.getElementById(
+    "bios-file",
+  ) as HTMLInputElement;
+
+  if (!biosSelector || !restartButton || !biosFileInput) {
+    console.error("BIOS selector elements not found");
+    return;
+  }
+
+  // Handle BIOS selection change
+  biosSelector.addEventListener("change", () => {
+    if (biosSelector.value === "custom") {
+      // If custom is selected but no ROM is loaded, trigger file picker
+      if (!hasCustomRom()) {
+        biosFileInput.click();
+      }
+    }
+  });
+
+  // Handle custom ROM file selection
+  biosFileInput.addEventListener("change", async (event) => {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    if (file) {
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const data = new Uint8Array(arrayBuffer);
+        
+        // Pad to 64KB if necessary
+        let romData = data;
+        if (data.length < 64 * 1024) {
+          romData = new Uint8Array(64 * 1024);
+          romData.fill(0xFF);
+          romData.set(data, 0);
+        }
+        
+        setCustomRom(romData, file.name);
+        
+        // Update the select option text to show the filename
+        const customOption = biosSelector.querySelector('option[value="custom"]');
+        if (customOption) {
+          customOption.textContent = `Custom: ${file.name}`;
+        }
+        
+        console.log(`Custom ROM loaded: ${file.name} (${data.length} bytes, padded to ${romData.length} bytes)`);
+      } catch (error) {
+        console.error("Failed to load custom ROM:", error);
+        alert(`Failed to load custom ROM: ${error}`);
+        // Reset selection if loading failed
+        biosSelector.value = "expert";
+      }
+    } else {
+      // User cancelled, reset selection if no custom ROM is loaded
+      if (!hasCustomRom()) {
+        biosSelector.value = "expert";
+      }
+    }
+  });
+
+  // Handle BIOS restart button
+  restartButton.addEventListener("click", async () => {
+    const selectedBiosId = biosSelector.value;
+    const biosOption = getBiosById(selectedBiosId);
+
+    if (!biosOption) {
+      console.error("Invalid BIOS selection:", selectedBiosId);
+      return;
+    }
+
+    // Special handling for custom ROM
+    if (selectedBiosId === "custom" && !hasCustomRom()) {
+      alert("Please select a custom ROM file first");
+      biosFileInput.click();
+      return;
+    }
+
+    try {
+      restartButton.disabled = true;
+      restartButton.textContent = "Loading...";
+
+      // Load the selected BIOS
+      const biosData = await biosOption.loader();
+
+      // Change BIOS in SystemManager
+      const systemManager = SystemManager.getInstance();
+      await systemManager.changeBios(biosData, selectedBiosId);
+
+      restartButton.textContent = "Restart";
+      restartButton.disabled = false;
+    } catch (error) {
+      console.error("Failed to load BIOS:", error);
+      restartButton.textContent = "Error!";
+      setTimeout(() => {
+        restartButton.textContent = "Restart";
+        restartButton.disabled = false;
+      }, 2000);
+    }
+  });
+}
+
+async function main() {
+  // Initialize with default BIOS (Expert)
+  const defaultBios = getBiosById("expert");
+  if (!defaultBios) {
+    throw new Error("Default BIOS not found");
+  }
+
+  const biosData = await defaultBios.loader();
+  const systemManager = SystemManager.getInstance(biosData, "expert");
+
   // Set up machine restart callback
   systemManager.setOnMachineRestart((machine) => {
     console.log("Machine restarted with new configuration");
-    setupMachine(machine);
+    setupMachine(machine, true);
   });
-  
+
+  // Set up BIOS selector
+  await setupBiosSelector();
+
   // Initial setup
-  setupMachine(systemManager.getMachine());
+  setupMachine(systemManager.getMachine(), false);
 }
 
 function onLoad() {

@@ -58,6 +58,16 @@ pub fn get_machine_with_disk(rom_data: &[u8], disk_rom_data: &[u8]) -> Machine {
         base_addr,
         size
     );
+    
+    // Check disk ROM header
+    if disk_rom_data.len() >= 2 {
+        tracing::info!(
+            "Disk ROM header: {:02X} {:02X} (should be 41 42 for 'AB' or similar)",
+            disk_rom_data[0],
+            disk_rom_data[1]
+        );
+    }
+    
     MachineBuilder::new()
         .rom_slot(rom_data, 0x0000, 0x10000) // Slot 0: Main BIOS
         .rom_slot(disk_rom_data, base_addr as u16, size) // Slot 1: Disk ROM

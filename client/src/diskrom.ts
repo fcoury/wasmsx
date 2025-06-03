@@ -11,21 +11,36 @@ export class SystemManager {
   private machine: Machine | null = null;
   private diskRomData: Uint8Array | null = null;
   private biosRomData: Uint8Array;
+  private currentBiosId: string = 'expert';
   private onMachineRestart?: (machine: Machine) => void;
+  private _hasDiskSupport: boolean = false;
 
-  constructor(biosRomData: Uint8Array) {
+  constructor(biosRomData: Uint8Array, biosId: string = 'expert') {
     this.biosRomData = biosRomData;
+    this.currentBiosId = biosId;
     this.setupDiskRomLoader();
   }
 
-  static getInstance(biosRomData?: Uint8Array): SystemManager {
+  static getInstance(biosRomData?: Uint8Array, biosId?: string): SystemManager {
     if (!SystemManager.instance) {
       if (!biosRomData) {
         throw new Error("BIOS ROM data required for initial setup");
       }
-      SystemManager.instance = new SystemManager(biosRomData);
+      SystemManager.instance = new SystemManager(biosRomData, biosId);
     }
     return SystemManager.instance;
+  }
+  
+  async changeBios(biosRomData: Uint8Array, biosId: string) {
+    this.biosRomData = biosRomData;
+    this.currentBiosId = biosId;
+    
+    // Restart the machine with new BIOS
+    this.restartMachine();
+  }
+  
+  getCurrentBiosId(): string {
+    return this.currentBiosId;
   }
 
   private setupDiskRomLoader() {
@@ -80,6 +95,7 @@ export class SystemManager {
       
       try {
         this.machine = Machine.newWithDisk(this.biosRomData, this.diskRomData);
+        this._hasDiskSupport = true;
       } catch (error) {
         console.error("Failed to create machine with disk ROM:", error);
         throw error;
@@ -87,6 +103,7 @@ export class SystemManager {
     } else {
       console.log("Creating machine without disk ROM");
       this.machine = new Machine(this.biosRomData);
+      this._hasDiskSupport = false;
     }
   }
 
@@ -120,5 +137,9 @@ export class SystemManager {
 
   hasDiskRom(): boolean {
     return this.diskRomData !== null;
+  }
+  
+  hasDiskSupport(): boolean {
+    return this._hasDiskSupport;
   }
 }

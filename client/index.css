@@ -181,3 +181,27 @@ pre {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.bios-select {
+  padding: 6px 12px;
+  background-color: var(--dark-4);
+  color: var(--text-1);
+  border: 1px solid var(--text-4);
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: "Roboto Mono", monospace;
+  font-size: 12px;
+  flex: 1;
+  margin-right: 10px;
+}
+
+.bios-select:hover {
+  background-color: var(--text-4);
+  color: var(--text-0);
+  border-color: var(--text-3);
+}
+
+.bios-select:focus {
+  outline: none;
+  border-color: var(--text-2);
+}

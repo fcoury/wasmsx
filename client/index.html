@@ -22,6 +22,17 @@
       <div class="controls">
         <div class="disk-controls">
           <h3>System Configuration</h3>
+          <div class="drive">
+            <div class="drive-label">BIOS:</div>
+            <select id="bios-selector" class="bios-select">
+              <option value="expert">Expert 1.1 (Brazilian)</option>
+              <option value="hotbit">Hotbit HB-8000</option>
+              <option value="cbios">CBIOS MSX1</option>
+              <option value="custom">Custom ROM...</option>
+            </select>
+            <input type="file" id="bios-file" accept=".rom,.ROM" style="display: none">
+            <button class="drive-button" id="bios-restart">Restart</button>
+          </div>
           <div class="drive" id="disk-rom-control">
             <div class="drive-label">Disk ROM:</div>
             <div class="drive-status" id="disk-rom-status">Not loaded</div>

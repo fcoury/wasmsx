@@ -111,7 +111,14 @@ impl Slot for RomSlot {
             // );
             return 0xFF;
         }
-        self.data[address as usize]
+        let value = self.data[address as usize];
+        
+        // Log first few bytes of ROM access for debugging
+        if self.base == 0x4000 && address < 0x10 {
+            tracing::trace!("Disk ROM read at {:04X}: {:02X}", self.base + address, value);
+        }
+        
+        value
     }
 
     fn write(&mut self, address: u16, _value: u8) {

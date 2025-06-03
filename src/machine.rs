@@ -143,6 +143,7 @@ impl Machine {
     }
 
     pub fn enable_disk_system(&mut self) {
+        tracing::info!("[Machine] Enabling disk system");
         self.bus.borrow_mut().enable_fdc();
     }
 
