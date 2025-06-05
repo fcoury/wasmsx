@@ -1,0 +1,3 @@
+[submodule "z80"]
+	path = z80
+	url = git@github.com:fcoury/z80.git
