@@ -12,6 +12,9 @@ pub struct AY38910 {
     resample_buffer: Vec<f32>,
     resample_accumulator: f32,
     resample_cycles: u32,
+    // Joystick state (0xFF means no buttons pressed)
+    pub joystick_port_a: u8,
+    pub joystick_port_b: u8,
 }
 
 impl AY38910 {
@@ -25,6 +28,8 @@ impl AY38910 {
             resample_buffer: Vec::with_capacity(4096),
             resample_accumulator: 0.0,
             resample_cycles: 0,
+            joystick_port_a: 0xFF, // All bits set = no buttons pressed
+            joystick_port_b: 0xFF, // All bits set = no buttons pressed
         };
 
         // Initialize register 7 (mixer) to 0xFF (all channels disabled by default)
@@ -43,6 +48,44 @@ impl AY38910 {
         self.resample_buffer.clear();
         self.resample_accumulator = 0.0;
         self.resample_cycles = 0;
+        self.joystick_port_a = 0xFF;
+        self.joystick_port_b = 0xFF;
+    }
+
+    // Handle joystick button presses
+    pub fn joystick_key_down(&mut self, key: String) {
+        // Map keyboard keys to joystick bits
+        // Space is typically mapped to the fire button (bit 4)
+        match key.as_str() {
+            "Space" => self.joystick_port_a &= !(1 << 4), // Clear bit 4 (fire button)
+            "ArrowUp" => self.joystick_port_a &= !(1 << 0), // Clear bit 0 (up)
+            "ArrowDown" => self.joystick_port_a &= !(1 << 1), // Clear bit 1 (down)
+            "ArrowLeft" => self.joystick_port_a &= !(1 << 2), // Clear bit 2 (left)
+            "ArrowRight" => self.joystick_port_a &= !(1 << 3), // Clear bit 3 (right)
+            _ => {}                                       // Ignore other keys
+        }
+        tracing::info!(
+            "[PSG] Joystick key down: {}, state: {:08b}",
+            key,
+            self.joystick_port_a
+        );
+    }
+
+    // Handle joystick button releases
+    pub fn joystick_key_up(&mut self, key: String) {
+        match key.as_str() {
+            "Space" => self.joystick_port_a |= 1 << 4, // Set bit 4 (fire button)
+            "ArrowUp" => self.joystick_port_a |= 1 << 0, // Set bit 0 (up)
+            "ArrowDown" => self.joystick_port_a |= 1 << 1, // Set bit 1 (down)
+            "ArrowLeft" => self.joystick_port_a |= 1 << 2, // Set bit 2 (left)
+            "ArrowRight" => self.joystick_port_a |= 1 << 3, // Set bit 3 (right)
+            _ => {}                                    // Ignore other keys
+        }
+        tracing::info!(
+            "[PSG] Joystick key up: {}, state: {:08b}",
+            key,
+            self.joystick_port_a
+        );
     }
 
     // Get next audio sample from the resample buffer
@@ -53,7 +96,7 @@ impl AY38910 {
             0.0
         }
     }
-    
+
     // Check if we have enough samples in the buffer
     pub fn has_samples(&self, count: usize) -> bool {
         self.resample_buffer.len() >= count
@@ -64,7 +107,7 @@ impl AY38910 {
         // PSG generates samples at CPU_CLOCK / 32 = ~112kHz
         const PSG_CLOCK_DIVIDER: u32 = 8;
         const PSG_SAMPLE_DIVIDER: u32 = 32;
-        
+
         // Constants for resampling from 112kHz to 44.1kHz
         const CPU_CLOCK: u32 = 3_579_545;
         const PSG_NATIVE_RATE: u32 = CPU_CLOCK / PSG_SAMPLE_DIVIDER; // ~112kHz
@@ -72,32 +115,32 @@ impl AY38910 {
 
         self.clock_divider += cycles;
         self.resample_cycles += cycles;
-        
+
         // Update PSG internal state
         while self.clock_divider >= PSG_CLOCK_DIVIDER {
             self.clock_divider -= PSG_CLOCK_DIVIDER;
             // The channel's next_sample method updates counters internally
         }
-        
+
         // Generate samples at PSG native rate (112kHz)
         while self.resample_cycles >= PSG_SAMPLE_DIVIDER {
             self.resample_cycles -= PSG_SAMPLE_DIVIDER;
-            
+
             // Generate next PSG sample
             let samples = self.channel.next_sample();
-            
+
             // Convert to float in range -1.0 to 1.0
             let raw_value = samples[0] as f32 / 255.0;
             let mono_sample = (raw_value * 0.66 * 2.0) - 1.0;
-            
+
             // Resample from 112kHz to 44.1kHz
             // PSG_NATIVE_RATE / AUDIO_SAMPLE_RATE ≈ 2.54
             self.resample_accumulator += AUDIO_SAMPLE_RATE as f32 / PSG_NATIVE_RATE as f32;
-            
+
             while self.resample_accumulator >= 1.0 {
                 self.resample_accumulator -= 1.0;
                 self.resample_buffer.push(mono_sample);
-                
+
                 // Prevent buffer from growing too large
                 if self.resample_buffer.len() > 8192 {
                     self.resample_buffer.drain(0..4096);
@@ -109,7 +152,16 @@ impl AY38910 {
     pub fn read(&mut self, port: u8) -> u8 {
         match port {
             0xA0 => self.selected_register,
-            0xA1 | 0xA2 => self.registers[self.selected_register as usize],
+            0xA1 | 0xA2 => {
+                // For register 14 (0x0E), return joystick port A state
+                if self.selected_register == 14 {
+                    self.joystick_port_a
+                } else if self.selected_register == 15 {
+                    self.joystick_port_b
+                } else {
+                    self.registers[self.selected_register as usize]
+                }
+            }
             _ => 0,
         }
     }
@@ -387,21 +439,33 @@ impl AudioChannel {
             if self.period_a_counter >= self.period_a {
                 // Preserve the remainder (0 or 1) for odd dividers, as the step is 2
                 self.period_a_counter = (self.period_a_counter - self.period_a) & 1;
-                self.current_sample_a = if self.current_sample_a != 0.0 { 0.0 } else { 1.0 };
+                self.current_sample_a = if self.current_sample_a != 0.0 {
+                    0.0
+                } else {
+                    1.0
+                };
             }
         }
         if self.period_b > 0 {
             self.period_b_counter += 2;
             if self.period_b_counter >= self.period_b {
                 self.period_b_counter = (self.period_b_counter - self.period_b) & 1;
-                self.current_sample_b = if self.current_sample_b != 0.0 { 0.0 } else { 1.0 };
+                self.current_sample_b = if self.current_sample_b != 0.0 {
+                    0.0
+                } else {
+                    1.0
+                };
             }
         }
         if self.period_c > 0 {
             self.period_c_counter += 2;
             if self.period_c_counter >= self.period_c {
                 self.period_c_counter = (self.period_c_counter - self.period_c) & 1;
-                self.current_sample_c = if self.current_sample_c != 0.0 { 0.0 } else { 1.0 };
+                self.current_sample_c = if self.current_sample_c != 0.0 {
+                    0.0
+                } else {
+                    1.0
+                };
             }
         }
         if self.noise_a || self.noise_b || self.noise_c {
