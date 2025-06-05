@@ -106,15 +106,17 @@ impl Machine {
 
     pub fn step_for(&mut self, n: usize) {
         let mut cycles_executed = 0;
-        
+
         while cycles_executed < n {
             // Process any pending messages first
             while let Some(message) = self.queue.borrow_mut().pop_front() {
                 match message {
                     Message::EnableInterrupts => {
+                        // tracing::debug!("[Machine] Asserting IRQ");
                         self.cpu.assert_irq(0);
                     }
                     Message::DisableInterrupts => {
+                        // tracing::debug!("[Machine] Clearing IRQ");
                         self.cpu.clr_irq();
                     }
                     Message::CpuStep => {
@@ -125,24 +127,40 @@ impl Machine {
                     }
                 }
             }
-            
-            // Execute CPU instruction and get actual cycle count
+
+            // Execute CPU instruction
             let cycles_taken = self.cpu.step();
-            
+
+            // Debug interrupt state changes
+            // static mut LAST_IM: u8 = 0xFF;
+            // static mut LAST_IFF1: bool = true;
+            // unsafe {
+            //     if self.cpu.interrupt_mode != LAST_IM || self.cpu.iff1 != LAST_IFF1 {
+            //         tracing::info!(
+            //             "[Machine] Interrupt state changed - IM: {} -> {}, IFF1: {} -> {} at PC: {:04X}",
+            //             LAST_IM, self.cpu.interrupt_mode,
+            //             LAST_IFF1, self.cpu.iff1,
+            //             self.cpu.pc
+            //         );
+            //         LAST_IM = self.cpu.interrupt_mode;
+            //         LAST_IFF1 = self.cpu.iff1;
+            //     }
+            // }
+
             // Clock the bus components (including PSG)
             self.bus.borrow_mut().clock(cycles_taken);
-            
+
             // Update clock and handle timing events
             let events = self.clock.tick(cycles_taken);
             if !events.is_empty() {
                 self.handle_clock_events(events);
             }
-            
+
             self.cycles += cycles_taken as usize;
             cycles_executed += cycles_taken as usize;
         }
     }
-    
+
     fn handle_clock_events(&mut self, events: Vec<ClockEvent>) {
         for event in events {
             match event {
@@ -153,7 +171,10 @@ impl Machine {
                     bus.vdp.evaluate_all_sprite_lines();
                     bus.vdp.set_vblank(true);
                     if bus.vdp.is_interrupt_enabled() {
+                        // tracing::debug!("[Machine] VBlank interrupt enabled, asserting IRQ");
                         self.cpu.assert_irq(0);
+                    } else {
+                        // tracing::debug!("[Machine] VBlank interrupt disabled");
                     }
                 }
                 ClockEvent::VBlankEnd => {
@@ -173,27 +194,32 @@ impl Machine {
                 }
                 ClockEvent::FrameEnd => {
                     self.frame_ready = true;
-                    tracing::trace!("Frame {} completed, total cycles: {}", 
-                        self.clock.frame_count(), self.clock.total_cycles());
+                    tracing::trace!(
+                        "Frame {} completed, total cycles: {}",
+                        self.clock.frame_count(),
+                        self.clock.total_cycles()
+                    );
                 }
             }
         }
     }
-    
+
     pub fn step_frame(&mut self) {
         self.frame_ready = false;
         let cycles_per_frame = (SCANLINES_PER_FRAME * CPU_CYCLES_PER_SCANLINE) as usize;
         let target_cycles = self.cycles + cycles_per_frame;
-        
+
         // Run CPU for one complete frame worth of cycles
         while self.cycles < target_cycles {
             // Process any pending messages
             while let Some(message) = self.queue.borrow_mut().pop_front() {
                 match message {
                     Message::EnableInterrupts => {
+                        // tracing::debug!("[Machine] Asserting IRQ");
                         self.cpu.assert_irq(0);
                     }
                     Message::DisableInterrupts => {
+                        // tracing::debug!("[Machine] Clearing IRQ");
                         self.cpu.clr_irq();
                     }
                     Message::CpuStep => {
@@ -204,30 +230,46 @@ impl Machine {
                     }
                 }
             }
-            
+
             // Execute CPU instruction and get actual cycle count
             let cycles_taken = self.cpu.step();
-            
+
+            // Debug interrupt state changes
+            // static mut LAST_IM: u8 = 0xFF;
+            // static mut LAST_IFF1: bool = true;
+            // unsafe {
+            //     if self.cpu.interrupt_mode != LAST_IM || self.cpu.iff1 != LAST_IFF1 {
+            //         tracing::info!(
+            //             "[Machine] Interrupt state changed - IM: {} -> {}, IFF1: {} -> {} at PC: {:04X}",
+            //             LAST_IM, self.cpu.interrupt_mode,
+            //             LAST_IFF1, self.cpu.iff1,
+            //             self.cpu.pc
+            //         );
+            //         LAST_IM = self.cpu.interrupt_mode;
+            //         LAST_IFF1 = self.cpu.iff1;
+            //     }
+            // }
+
             // Clock the bus components (including PSG)
             self.bus.borrow_mut().clock(cycles_taken);
-            
+
             // Update clock and handle timing events
             let events = self.clock.tick(cycles_taken);
             if !events.is_empty() {
                 self.handle_clock_events(events);
             }
-            
+
             self.cycles += cycles_taken as usize;
         }
-        
+
         // Frame is complete
         self.frame_ready = true;
     }
-    
+
     pub fn is_frame_ready(&self) -> bool {
         self.frame_ready
     }
-    
+
     pub fn get_frame_progress(&self) -> f64 {
         self.clock.frame_progress()
     }

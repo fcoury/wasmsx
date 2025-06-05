@@ -16,6 +16,7 @@ use std::sync::Once;
 
 pub use fdc::{DiskFormat, DiskImage, WD2793};
 pub use internal_state::{InternalState, ReportState};
+use js_sys::Float32Array;
 pub use machine::MachineBuilder;
 pub use machine::{Machine, ProgramEntry};
 pub use renderer::Renderer;
@@ -24,7 +25,6 @@ pub use utils::{compare_slices, hexdump, partial_hexdump};
 pub use vdp::TMS9918;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
-use js_sys::Float32Array;
 
 pub fn get_machine(rom_data: &[u8]) -> Machine {
     MachineBuilder::new()
@@ -60,7 +60,7 @@ pub fn get_machine_with_disk(rom_data: &[u8], disk_rom_data: &[u8]) -> Machine {
         base_addr,
         size
     );
-    
+
     // Check disk ROM header
     if disk_rom_data.len() >= 2 {
         tracing::info!(
@@ -69,7 +69,7 @@ pub fn get_machine_with_disk(rom_data: &[u8], disk_rom_data: &[u8]) -> Machine {
             disk_rom_data[1]
         );
     }
-    
+
     MachineBuilder::new()
         .rom_slot(rom_data, 0x0000, 0x10000) // Slot 0: Main BIOS
         .rom_slot(disk_rom_data, base_addr as u16, size) // Slot 1: Disk ROM
@@ -144,17 +144,17 @@ impl JsMachine {
     pub fn step_for(&mut self, n: usize) {
         self.0.step_for(n);
     }
-    
+
     #[wasm_bindgen(js_name = stepFrame)]
     pub fn step_frame(&mut self) {
         self.0.step_frame();
     }
-    
+
     #[wasm_bindgen(js_name = isFrameReady)]
     pub fn is_frame_ready(&self) -> bool {
         self.0.is_frame_ready()
     }
-    
+
     #[wasm_bindgen(js_name = getFrameProgress)]
     pub fn get_frame_progress(&self) -> f64 {
         self.0.get_frame_progress()
@@ -204,14 +204,14 @@ impl JsMachine {
     pub fn eject_disk(&mut self, drive: usize) {
         self.0.eject_disk(drive);
     }
-    
+
     #[wasm_bindgen(js_name=generateAudioSamples)]
     pub fn generate_audio_samples(&mut self, sample_count: usize) -> Float32Array {
         let mut samples = Vec::with_capacity(sample_count);
-        
+
         // Check if PSG has enough samples buffered
         let mut bus = self.0.bus.borrow_mut();
-        
+
         // If we don't have enough samples, run the emulation to generate more
         while !bus.psg.has_samples(sample_count) {
             // Run emulation for a short period to generate audio samples
@@ -220,19 +220,19 @@ impl JsMachine {
             self.0.step_for(sample_count * 100); // Run extra cycles to ensure buffer fills
             bus = self.0.bus.borrow_mut();
         }
-        
+
         // Collect samples from the PSG buffer
         for _ in 0..sample_count {
             let sample = bus.psg.get_audio_sample();
             samples.push(sample);
         }
-        
+
         // Convert to JavaScript Float32Array
         let array = Float32Array::new_with_length(samples.len() as u32);
         for (i, &sample) in samples.iter().enumerate() {
             array.set_index(i as u32, sample);
         }
-        
+
         array
     }
 }
