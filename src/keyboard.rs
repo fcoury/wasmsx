@@ -12,10 +12,15 @@ impl Keyboard {
     }
 
     pub fn key_down(&mut self, key: String) {
-        if let Some(key) = self.mappings.iter().find(|k| k.key == key) {
-            self.pressed.insert(key.mapping.clone());
+        if let Some(key_mapping) = self.mappings.iter().find(|k| k.key == key) {
+            self.pressed.insert(key_mapping.mapping.clone());
+
+            // Special debug for Space key (row 8, bit 0)
+            if key == "Space" {
+                tracing::info!("[Keyboard] Space key pressed (row 8, bit 0)");
+            }
         }
-        // tracing::info!("KeyDown: {}, Pressed: {:?}", key, self.pressed);
+        tracing::info!("KeyDown: {}, Pressed: {:?}", key, self.pressed);
     }
 
     pub fn key_up(&mut self, key: String) {
@@ -25,7 +30,7 @@ impl Keyboard {
         tracing::info!("KeyUp: {}, Pressed: {:?}", key, self.pressed);
     }
 
-    pub fn get_row(&mut self, row: u8) -> u8 {
+    pub fn get_row(&self, row: u8) -> u8 {
         let mut ret = 0xFF;
         let debug = !self.pressed.is_empty();
 

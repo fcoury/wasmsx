@@ -18,6 +18,11 @@ impl Ppi {
         Ppi::default()
     }
 
+    // Expose the currently selected keyboard row
+    pub fn keyboard_row_selected(&self) -> u8 {
+        self.keyboard_row_selected
+    }
+
     pub fn reset(&mut self) {
         self.register_c = 0x70; // Everything OFF. Motor bits 4,5 and CapsLed bit 6 = 1 means OFF
         self.keyboard_row_selected = 0;
@@ -26,11 +31,12 @@ impl Ppi {
     }
 
     pub fn key_down(&mut self, key: String) {
+        tracing::info!("[PPI] Key down: {}", key);
         self.keyboard.key_down(key);
     }
 
     pub fn key_up(&mut self, key: String) {
-        tracing::trace!("[PPI] Key up: {}", key);
+        tracing::info!("[PPI] Key up: {}", key);
         self.keyboard.key_up(key);
     }
 
@@ -61,6 +67,8 @@ impl Ppi {
                 self.primary_slot_config
             }
             0xA9 => {
+                // Note: The actual multiplexing between keyboard and joystick
+                // is now handled in the Bus implementation
                 tracing::trace!(
                     "[PPI] [RD] [KeyboardPrt] [{:02X}] = {:02X}",
                     port,
@@ -86,7 +94,23 @@ impl Ppi {
     }
 
     pub fn read_keyboard(&mut self) -> u8 {
-        self.keyboard.get_row(self.keyboard_row_selected)
+        let result = self.keyboard.get_row(self.keyboard_row_selected);
+        if result != 0xFF {
+            tracing::info!(
+                "[PPI] Reading keyboard row {}: {:08b}",
+                self.keyboard_row_selected,
+                result
+            );
+            //
+            // // dumps all rows if any key is pressed
+            // for row in 0..8 {
+            //     let row_value = self.keyboard.get_row(row);
+            //     if row_value != 0xFF {
+            //         tracing::debug!("[PPI] Row {}: {:08b}", row, row_value);
+            //     }
+            // }
+        }
+        result
     }
 
     pub fn write(&mut self, port: u8, value: u8) {
@@ -157,6 +181,7 @@ impl Ppi {
                 }
 
                 if modf & 0x0f != 0 {
+                    // Lower 4 bits changed - keyboard row selection
                     self.update_keyboard_config();
                 }
 
@@ -216,8 +241,31 @@ impl Ppi {
     }
 
     fn update_keyboard_config(&mut self) {
+        // let old_row = self.keyboard_row_selected;
         self.keyboard_row_selected = self.register_c & 0x0f;
-        tracing::trace!("[PPI] Keyboard row: {}", self.keyboard_row_selected);
+
+        // Track keyboard scanning
+        // static mut ROW_SCAN_COUNT: u32 = 0;
+        // static mut LAST_SCAN_REPORT: u32 = 0;
+        //
+        // unsafe {
+        //     if old_row != self.keyboard_row_selected {
+        //         // Check if we're scanning through rows in sequence
+        //         if self.keyboard_row_selected == 0 && old_row > 0 {
+        //             ROW_SCAN_COUNT += 1;
+        //
+        //             // Report every 60 scans (approximately once per second at 60Hz)
+        //             if ROW_SCAN_COUNT - LAST_SCAN_REPORT >= 60 {
+        //                 tracing::info!(
+        //                     "[PPI] Keyboard scan cycles: {} (scanning is {})",
+        //                     ROW_SCAN_COUNT,
+        //                     if ROW_SCAN_COUNT > LAST_SCAN_REPORT { "active" } else { "stopped" }
+        //                 );
+        //                 LAST_SCAN_REPORT = ROW_SCAN_COUNT;
+        //             }
+        //         }
+        //     }
+        // }
     }
 
     fn update_caps_led(&mut self) {
