@@ -41,11 +41,15 @@ impl Bus {
     }
 
     pub fn key_down(&mut self, key: String) {
-        self.ppi.key_down(key);
+        // Send key press to both keyboard and joystick handlers
+        self.ppi.key_down(key.clone());
+        self.psg.joystick_key_down(key);
     }
 
     pub fn key_up(&mut self, key: String) {
-        self.ppi.key_up(key);
+        // Send key release to both keyboard and joystick handlers
+        self.ppi.key_up(key.clone());
+        self.psg.joystick_key_up(key);
     }
 
     pub fn mem_size(&self) -> usize {
@@ -141,7 +145,35 @@ impl Bus {
         match port {
             0x98 | 0x99 => self.vdp.read(port),
             0xA0 | 0xA1 | 0xA2 => self.psg.read(port),
-            0xA8..=0xAB => self.ppi.read(port),
+            0xA8 => self.ppi.read(port), // Primary slot config
+            0xA9 => {
+                // Special handling for keyboard port (0xA9)
+                // This is where we implement the multiplexing between keyboard and joystick
+
+                // First, get the keyboard state from PPI
+                let keyboard_state = self.ppi.read(port);
+
+                // If we're reading row 8 (where space bar is located), we need to combine with joystick
+                if self.ppi.keyboard_row_selected() == 8 {
+                    // Get joystick state from PSG (bit 4 is fire button/space)
+                    let joystick_state = self.psg.joystick_port_a;
+
+                    // If space is pressed on joystick (bit 4 is 0), clear bit 0 in keyboard state
+                    // This simulates the space key being pressed in row 8
+                    if (joystick_state & (1 << 4)) == 0 {
+                        tracing::info!(
+                            "[BUS] Multiplexing joystick space to keyboard: KB:{:08b}, Joy:{:08b}, Result:{:08b}",
+                            keyboard_state,
+                            joystick_state,
+                            keyboard_state & !(1 << 0)
+                        );
+                        return keyboard_state & !(1 << 0);
+                    }
+                }
+
+                keyboard_state
+            }
+            0xAA | 0xAB => self.ppi.read(port), // Other PPI ports
             0x7C..=0x7F => {
                 if let Some(fdc) = &mut self.fdc {
                     let result = fdc.read(port);
@@ -304,105 +336,6 @@ impl Bus {
     pub fn read_byte(&self, addr: u16) -> u8 {
         let (slot_number, addr) = self.translate_address(addr);
         let value = self.slots[slot_number].read(addr);
-
-        // Log CALL SYSTEM hook which may trigger disk ROM
-        if addr == 0xFFCA || addr == 0xFFCB || addr == 0xFFCC {
-            tracing::info!("[CALL SYSTEM] Reading hook at {:04X} = {:02X}", addr, value);
-        }
-
-        // Log disk-related hook reads
-        if addr == 0xF323 || addr == 0xF324 || addr == 0xF325 {
-            tracing::info!(
-                "[DISK HOOK] Reading format hook at {:04X} = {:02X} (slot {})",
-                addr,
-                value,
-                slot_number
-            );
-        }
-
-        // Log when execution jumps to disk ROM handler
-        if (0x72AE..=0x72B0).contains(&addr) {
-            tracing::info!(
-                "[DISK ROM] Executing disk statement handler at {:04X}",
-                addr
-            );
-        }
-
-        // Log NEWSTT hook execution which might handle FILES
-        if (0xF1C9..=0xF1CB).contains(&addr) {
-            tracing::info!(
-                "[NEWSTT HOOK] Reading statement hook at {:04X} = {:02X}",
-                addr,
-                value
-            );
-        }
-
-        // Log extended BIOS area which disk ROM might use
-        if (0xF380..=0xF3FF).contains(&addr) && value == 0xC9 {
-            static mut LAST_EXTBIO: u16 = 0;
-            unsafe {
-                if LAST_EXTBIO != addr {
-                    tracing::debug!("[EXTBIO] Return from extended BIOS at {:04X}", addr);
-                    LAST_EXTBIO = addr;
-                }
-            }
-        }
-
-        // Log disk ROM area access
-        if (0x4000..0x8000).contains(&addr) && slot_number == 1 {
-            // Log entry points more prominently
-            if addr == 0x4010
-                || addr == 0x4013
-                || addr == 0x4016
-                || addr == 0x4019
-                || addr == 0x401C
-                || addr == 0x401F
-                || addr == 0x4022
-            {
-                tracing::trace!(
-                    "[DISK ROM] Entry point access: addr={:04X}, slot={}, value={:02X}",
-                    addr,
-                    slot_number,
-                    value
-                );
-            } else if (0x7000..=0x73FF).contains(&addr) {
-                // Log disk ROM code execution area
-                // static mut LAST_EXEC: u16 = 0;
-                // unsafe {
-                //     if addr.wrapping_sub(LAST_EXEC) > 10 {
-                //         tracing::debug!(
-                //             "[DISK ROM] Code execution at {:04X}, value={:02X}",
-                //             addr,
-                //             value
-                //         );
-                //     }
-                //     LAST_EXEC = addr;
-                // }
-            } else if (0x7800..0x7900).contains(&addr) {
-                // Log disk work area reads (common location for disk system variables)
-                tracing::trace!(
-                    "[DISK ROM] Work area read: addr={:04X}, slot={}, value={:02X}",
-                    addr,
-                    slot_number,
-                    value
-                );
-            } else if (0x4000..0x4100).contains(&addr) {
-                // Log the first 256 bytes of disk ROM more verbosely to see initialization
-                tracing::trace!(
-                    "[DISK ROM] Init area read: addr={:04X}, slot={}, value={:02X}",
-                    addr,
-                    slot_number,
-                    value
-                );
-            } else {
-                tracing::trace!(
-                    "Reading from disk ROM area: addr={:04X}, slot={}, value={:02X}",
-                    addr,
-                    slot_number,
-                    value
-                );
-            }
-        }
 
         value
     }
