@@ -155,7 +155,8 @@ impl<'a> Renderer<'a> {
         // Render sprites on this line
         if line < self.vdp.sprites_visible.len() {
             let visible_sprites = &self.vdp.sprites_visible[line];
-            self.vdp.render_sprites_on_line(line, &mut self.screen_buffer, visible_sprites);
+            self.vdp
+                .render_sprites_on_line(line, &mut self.screen_buffer, visible_sprites);
         }
     }
 
@@ -167,25 +168,25 @@ impl<'a> Renderer<'a> {
         let color_table = self.vdp.color_table();
 
         let pattern_row = line % 8;
-        let char_row = line / 8;  // Which character row (0-23)
-        let name_offset = char_row * 32;  // Offset into name table
+        let char_row = line / 8; // Which character row (0-23)
+        let name_offset = char_row * 32; // Offset into name table
         let mut pixel_ptr = line * 256;
 
         // Screen 2 divides the screen into 3 banks (thirds) of 8 character rows each
         // Bank 0: lines 0-63 (character rows 0-7)
         // Bank 1: lines 64-127 (character rows 8-15)
         // Bank 2: lines 128-191 (character rows 16-23)
-        let bank = (line / 64) as usize;  // 0, 1, or 2
+        let bank = (line / 64) as usize; // 0, 1, or 2
 
         for x in 0..32 {
             let name_index = name_offset + x;
             let char_code = self.vdp.vram[name_table_base + name_index] as usize;
-            
+
             // In Screen 2, pattern/color tables are organized differently:
             // Each bank (third of screen) can use different pattern definitions for the same character
             // The effective character code in the pattern table is: char_code + (bank * 256)
             // But since pattern table only has 256 entries per bank, we wrap at 256
-            let effective_char = char_code & 0xFF;  // Ensure we stay within 0-255
+            let effective_char = char_code & 0xFF; // Ensure we stay within 0-255
             let pattern_index = (bank * 2048) + (effective_char * 8) + pattern_row;
             let pattern = if pattern_index < pattern_table.len() {
                 pattern_table[pattern_index]
@@ -198,7 +199,7 @@ impl<'a> Renderer<'a> {
             let color = if color_index < color_table.len() {
                 color_table[color_index]
             } else {
-                0x1F  // Default to white on black if out of bounds
+                0x1F // Default to white on black if out of bounds
             };
             let fg = (color >> 4) & 0x0F;
             let bg = color & 0x0F;
@@ -217,7 +218,8 @@ impl<'a> Renderer<'a> {
         // Render sprites on this line
         if line < self.vdp.sprites_visible.len() {
             let visible_sprites = &self.vdp.sprites_visible[line];
-            self.vdp.render_sprites_on_line(line, &mut self.screen_buffer, visible_sprites);
+            self.vdp
+                .render_sprites_on_line(line, &mut self.screen_buffer, visible_sprites);
         }
     }
 }

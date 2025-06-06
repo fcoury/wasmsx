@@ -81,4 +81,3 @@ mod timing_tests {
         assert!(progress2 > 0.99, "Progress was {}", progress2);
     }
 }
-
