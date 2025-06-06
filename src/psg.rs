@@ -8,10 +8,8 @@ pub struct AY38910 {
     channel: AudioChannel,
     clock_divider: u32,
     sample_counter: u32,
-    // Resampling buffer for 112kHz to 44.1kHz conversion
-    resample_buffer: Vec<f32>,
-    resample_accumulator: f32,
-    resample_cycles: u32,
+    // Buffer for audio samples
+    sample_buffer: Vec<f32>,
     // Joystick state (0xFF means no buttons pressed)
     pub joystick_port_a: u8,
     pub joystick_port_b: u8,
@@ -25,9 +23,7 @@ impl AY38910 {
             channel: AudioChannel::new(),
             clock_divider: 0,
             sample_counter: 0,
-            resample_buffer: Vec::with_capacity(4096),
-            resample_accumulator: 0.0,
-            resample_cycles: 0,
+            sample_buffer: Vec::with_capacity(4096),
             joystick_port_a: 0xFF, // All bits set = no buttons pressed
             joystick_port_b: 0xFF, // All bits set = no buttons pressed
         };
@@ -45,9 +41,7 @@ impl AY38910 {
         self.channel.reset();
         self.clock_divider = 0;
         self.sample_counter = 0;
-        self.resample_buffer.clear();
-        self.resample_accumulator = 0.0;
-        self.resample_cycles = 0;
+        self.sample_buffer.clear();
         self.joystick_port_a = 0xFF;
         self.joystick_port_b = 0xFF;
     }
@@ -88,10 +82,10 @@ impl AY38910 {
         );
     }
 
-    // Get next audio sample from the resample buffer
+    // Get next audio sample from the buffer
     pub fn get_audio_sample(&mut self) -> f32 {
-        if !self.resample_buffer.is_empty() {
-            self.resample_buffer.remove(0)
+        if !self.sample_buffer.is_empty() {
+            self.sample_buffer.remove(0)
         } else {
             0.0
         }
@@ -99,7 +93,7 @@ impl AY38910 {
 
     // Check if we have enough samples in the buffer
     pub fn has_samples(&self, count: usize) -> bool {
-        self.resample_buffer.len() >= count
+        self.sample_buffer.len() >= count
     }
 
     pub fn clock(&mut self, cycles: u32) {
@@ -108,23 +102,11 @@ impl AY38910 {
         const PSG_CLOCK_DIVIDER: u32 = 8;
         const PSG_SAMPLE_DIVIDER: u32 = 32;
 
-        // Constants for resampling from 112kHz to 44.1kHz
-        const CPU_CLOCK: u32 = 3_579_545;
-        const PSG_NATIVE_RATE: u32 = CPU_CLOCK / PSG_SAMPLE_DIVIDER; // ~112kHz
-        const AUDIO_SAMPLE_RATE: u32 = 44100;
-
         self.clock_divider += cycles;
-        self.resample_cycles += cycles;
-
-        // Update PSG internal state
-        while self.clock_divider >= PSG_CLOCK_DIVIDER {
-            self.clock_divider -= PSG_CLOCK_DIVIDER;
-            // The channel's next_sample method updates counters internally
-        }
 
         // Generate samples at PSG native rate (112kHz)
-        while self.resample_cycles >= PSG_SAMPLE_DIVIDER {
-            self.resample_cycles -= PSG_SAMPLE_DIVIDER;
+        while self.clock_divider >= PSG_SAMPLE_DIVIDER {
+            self.clock_divider -= PSG_SAMPLE_DIVIDER;
 
             // Generate next PSG sample
             let samples = self.channel.next_sample();
@@ -133,18 +115,11 @@ impl AY38910 {
             let raw_value = samples[0] as f32 / 255.0;
             let mono_sample = (raw_value * 0.66 * 2.0) - 1.0;
 
-            // Resample from 112kHz to 44.1kHz
-            // PSG_NATIVE_RATE / AUDIO_SAMPLE_RATE ≈ 2.54
-            self.resample_accumulator += AUDIO_SAMPLE_RATE as f32 / PSG_NATIVE_RATE as f32;
+            self.sample_buffer.push(mono_sample);
 
-            while self.resample_accumulator >= 1.0 {
-                self.resample_accumulator -= 1.0;
-                self.resample_buffer.push(mono_sample);
-
-                // Prevent buffer from growing too large
-                if self.resample_buffer.len() > 8192 {
-                    self.resample_buffer.drain(0..4096);
-                }
+            // Prevent buffer from growing too large
+            if self.sample_buffer.len() > 8192 {
+                self.sample_buffer.drain(0..4096);
             }
         }
     }
@@ -541,22 +516,24 @@ impl AudioChannel {
             self.sample_result
         } else {
             // Simple Mono path (no VOL/PAN)
-            // WebMSX: Mix tone with noise. Tone or noise if turned off produce a fixed high value (1)
-            let mut m_sample_result = if self.amplitude_a == 0.0
+            // Correctly mix the channels by averaging them
+            let sample_a = if self.amplitude_a == 0.0
                 || (self.tone_a && self.current_sample_a == 0.0)
                 || (self.noise_a && self.current_sample_n == 0.0)
             {
                 0.0
             } else {
                 self.amplitude_a
-            } + if self.amplitude_b == 0.0
+            };
+            let sample_b = if self.amplitude_b == 0.0
                 || (self.tone_b && self.current_sample_b == 0.0)
                 || (self.noise_b && self.current_sample_n == 0.0)
             {
                 0.0
             } else {
                 self.amplitude_b
-            } + if self.amplitude_c == 0.0
+            };
+            let sample_c = if self.amplitude_c == 0.0
                 || (self.tone_c && self.current_sample_c == 0.0)
                 || (self.noise_c && self.current_sample_n == 0.0)
             {
@@ -564,6 +541,9 @@ impl AudioChannel {
             } else {
                 self.amplitude_c
             };
+
+            let mut m_sample_result = (sample_a + sample_b + sample_c) / 3.0;
+
             if self.current_sample_p != 0.0 {
                 if !self.pulse_signal
                 // && self.get_bus_cycles() - self.pulse_signal_on_clocks >= MIN_PULSE_ON_CLOCKS

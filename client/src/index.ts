@@ -106,7 +106,7 @@ class App {
    * @returns {boolean} Whether the key was handled
    */
   public keyDown(key: string): boolean {
-    console.log("keyDown", key);
+    console.log("client keyDown", key);
     return this.emulator.keyDown(key);
   }
 
@@ -116,7 +116,7 @@ class App {
    * @returns {boolean} Whether the key was handled
    */
   public keyUp(key: string): boolean {
-    console.log("keyUp", key);
+    console.log("client keyUp", key);
     const handled = this.emulator.keyUp(key);
     return handled;
   }
@@ -129,7 +129,12 @@ class App {
     // Cap delta time to prevent spiral of death
     const cappedDt = Math.min(dt, 0.1); // Cap at 100ms (10 FPS minimum)
 
-    this.emulator.run(cappedDt);
+    // Add a frame limiter to prevent the emulator from running too fast
+    if (cappedDt > 1 / 60) {
+      this.emulator.run(1 / 60);
+    } else {
+      this.emulator.run(cappedDt);
+    }
 
     // Always render for now to debug the issue
     this.renderer.renderScreen(this.emulator.getScreen());
@@ -334,24 +339,24 @@ class Emulator {
           return;
         }
 
-        // WebMSX runs PSG at ~112kHz, we need to downsample to 44.1kHz
-        // This is approximately 2.54 PSG samples per audio output sample
+        // Calculate the number of samples to generate from the PSG
         const resampleRatio = PSG_NATIVE_RATE / AUDIO_SAMPLE_RATE;
+        const samplesToGenerate = Math.ceil(bufferSize * resampleRatio);
 
-        // Generate audio samples from the PSG with proper resampling
-        const samples = this.machine.generateAudioSamples(bufferSize);
+        // Generate audio samples from the PSG
+        const samples = this.machine.generateAudioSamples(samplesToGenerate);
 
-        // Copy samples to output buffer with simple low-pass filtering
+        // Downsample from 112kHz to 44.1kHz
+        let sampleIndex = 0;
         for (let i = 0; i < bufferSize; i++) {
-          const sample = samples[i] || 0;
-
-          // Simple low-pass filter to reduce aliasing
-          if (i > 0) {
-            const prevSample = output[i - 1] ?? 0;
-            output[i] = sample * 0.7 + prevSample * 0.3;
-          } else {
-            output[i] = sample;
+          let total = 0;
+          let count = 0;
+          while (sampleIndex < (i + 1) * resampleRatio) {
+            total += samples[sampleIndex] || 0;
+            count++;
+            sampleIndex++;
           }
+          output[i] = count > 0 ? total / count : 0;
         }
       };
     } catch (error) {

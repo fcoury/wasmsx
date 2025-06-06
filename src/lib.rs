@@ -208,31 +208,23 @@ impl JsMachine {
     #[wasm_bindgen(js_name=generateAudioSamples)]
     pub fn generate_audio_samples(&mut self, sample_count: usize) -> Float32Array {
         let mut samples = Vec::with_capacity(sample_count);
-
-        // Check if PSG has enough samples buffered
         let mut bus = self.0.bus.borrow_mut();
 
         // If we don't have enough samples, run the emulation to generate more
         while !bus.psg.has_samples(sample_count) {
-            // Run emulation for a short period to generate audio samples
-            // At 3.579545 MHz and 44100 Hz sample rate, we need ~81 CPU cycles per sample
-            drop(bus); // Release the borrow
-            self.0.step_for(sample_count * 100); // Run extra cycles to ensure buffer fills
+            // Release the borrow before stepping the machine
+            drop(bus);
+            // Step the machine for a small number of cycles to generate more samples
+            self.0.step_for(1000);
             bus = self.0.bus.borrow_mut();
         }
 
         // Collect samples from the PSG buffer
         for _ in 0..sample_count {
-            let sample = bus.psg.get_audio_sample();
-            samples.push(sample);
+            samples.push(bus.psg.get_audio_sample());
         }
 
         // Convert to JavaScript Float32Array
-        let array = Float32Array::new_with_length(samples.len() as u32);
-        for (i, &sample) in samples.iter().enumerate() {
-            array.set_index(i as u32, sample);
-        }
-
-        array
+        Float32Array::from(&samples[..])
     }
 }
