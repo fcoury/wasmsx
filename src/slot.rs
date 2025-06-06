@@ -70,7 +70,7 @@ pub struct RomSlot {
 impl RomSlot {
     pub fn new(rom: &[u8], base: u16, size: u32) -> Self {
         let mut data = vec![0xFF; size as usize];
-        
+
         // Copy the ROM data, but don't exceed the ROM size
         let copy_size = rom.len().min(size as usize);
         data[0..copy_size].copy_from_slice(&rom[0..copy_size]);
@@ -85,7 +85,12 @@ impl RomSlot {
         }
     }
 
-    pub fn load(rom_path: PathBuf, base: u16, size: u32) -> anyhow::Result<Self> {
+    pub fn load(&mut self, rom: &[u8]) {
+        let copy_size = rom.len().min(self.size as usize);
+        self.data[0..copy_size].copy_from_slice(&rom[0..copy_size]);
+    }
+
+    pub fn load_from_path(rom_path: PathBuf, base: u16, size: u32) -> anyhow::Result<Self> {
         let mut file = File::open(&rom_path)?;
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer)?;
@@ -112,12 +117,16 @@ impl Slot for RomSlot {
             return 0xFF;
         }
         let value = self.data[address as usize];
-        
+
         // Log first few bytes of ROM access for debugging
         if self.base == 0x4000 && address < 0x10 {
-            tracing::trace!("Disk ROM read at {:04X}: {:02X}", self.base + address, value);
+            tracing::trace!(
+                "Disk ROM read at {:04X}: {:02X}",
+                self.base + address,
+                value
+            );
         }
-        
+
         value
     }
 

@@ -464,8 +464,11 @@ impl Bus {
     }
 
     pub fn load_rom(&mut self, slot: u8, rom: &[u8]) {
-        // self.slots[slot as usize] = SlotType::Rom(RomSlot::new(rom, 0x0000, rom.len() as u32));
-        self.slots[slot as usize] = SlotType::Rom(RomSlot::new(rom, 0x0000, 0x10000));
+        if let SlotType::Rom(rom_slot) = &mut self.slots[slot as usize] {
+            rom_slot.load(rom);
+        } else {
+            self.slots[slot as usize] = SlotType::Rom(RomSlot::new(rom, 0x0000, 0x10000));
+        }
     }
 
     pub fn load_ram(&mut self, slot: u8) {
