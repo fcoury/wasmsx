@@ -146,7 +146,7 @@ class App {
 }
 
 class Emulator {
-  private machine: Machine;
+  public machine: Machine;
   private running: boolean;
   private vram: HTMLDivElement;
   private state: HTMLDivElement;
@@ -545,6 +545,7 @@ let currentApp: App | null = null;
 let currentEmulator: Emulator | null = null;
 let currentDiskController: DiskController | null = null;
 let animationId: number | null = null;
+let keyEventListenersAdded = false;
 
 function setupMachine(machine: Machine, isRestart: boolean = false) {
   // Cancel any existing animation frame
@@ -575,6 +576,7 @@ function setupMachine(machine: Machine, isRestart: boolean = false) {
   // Store references
   currentApp = app;
   currentEmulator = emulator;
+  (window as any).currentMachine = machine;
 
   // Set up audio toggle button
   const audioToggle = document.getElementById(
@@ -593,29 +595,38 @@ function setupMachine(machine: Machine, isRestart: boolean = false) {
 
   let lastTime = Date.now();
 
-  // Note: Event listeners will accumulate, but this is okay for our use case
-  // since we're restarting the entire machine
+  // Only add event listeners once to avoid duplication
+  if (!keyEventListenersAdded) {
+    keyEventListenersAdded = true;
 
-  // Add new event listeners
-  window.addEventListener("keydown", (e) => {
-    if (app.keyDown(e.code)) {
-      if (emulator.isRunning()) {
-        requestAnimationFrame(frame);
+    window.addEventListener("keydown", (e) => {
+      if (currentApp && currentApp.keyDown(e.code)) {
+        if (currentEmulator && currentEmulator.isRunning()) {
+          requestAnimationFrame(frame);
+        }
+        return;
       }
-      return;
-    }
-    machine.keyDown(e.code);
-  });
+      const machine =
+        (window as any).currentMachine || currentEmulator?.machine;
+      if (machine) {
+        machine.keyDown(e.code);
+      }
+    });
 
-  window.addEventListener("keyup", (e) => {
-    if (app.keyUp(e.code)) {
-      if (emulator.isRunning()) {
-        requestAnimationFrame(frame);
+    window.addEventListener("keyup", (e) => {
+      if (currentApp && currentApp.keyUp(e.code)) {
+        if (currentEmulator && currentEmulator.isRunning()) {
+          requestAnimationFrame(frame);
+        }
+        return;
       }
-      return;
-    }
-    machine.keyUp(e.code);
-  });
+      const machine =
+        (window as any).currentMachine || currentEmulator?.machine;
+      if (machine) {
+        machine.keyUp(e.code);
+      }
+    });
+  }
 
   const frame = () => {
     const now = Date.now();
