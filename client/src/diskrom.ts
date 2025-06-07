@@ -9,7 +9,7 @@ export interface DiskRomConfig {
 export class SystemManager {
   private static instance: SystemManager | null = null;
   private machine: Machine | null = null;
-  private diskRomData: Uint8Array | null = null;
+  private slot1RomData: Uint8Array | null = null;
   private biosRomData: Uint8Array;
   private currentBiosId: string = 'expert';
   private onMachineRestart?: (machine: Machine) => void;
@@ -30,15 +30,15 @@ export class SystemManager {
     }
     return SystemManager.instance;
   }
-  
+
   async changeBios(biosRomData: Uint8Array, biosId: string) {
     this.biosRomData = biosRomData;
     this.currentBiosId = biosId;
-    
+
     // Restart the machine with new BIOS
     this.restartMachine();
   }
-  
+
   getCurrentBiosId(): string {
     return this.currentBiosId;
   }
@@ -46,7 +46,7 @@ export class SystemManager {
   private setupDiskRomLoader() {
     const fileInput = document.getElementById('disk-rom-file') as HTMLInputElement;
     const loadButton = document.getElementById('disk-rom-load');
-    const statusElement = document.getElementById('disk-rom-status');
+    const statusElement = document.getElementById('slot1-rom-status');
 
     loadButton?.addEventListener('click', () => {
       fileInput.click();
@@ -57,13 +57,13 @@ export class SystemManager {
       if (file) {
         try {
           const arrayBuffer = await file.arrayBuffer();
-          this.diskRomData = new Uint8Array(arrayBuffer);
-          
+          this.slot1RomData = new Uint8Array(arrayBuffer);
+
           if (statusElement) {
             statusElement.textContent = file.name;
             statusElement.classList.add('mounted');
           }
-          
+
           // Restart the machine with the new configuration
           this.restartMachine();
         } catch (error) {
@@ -82,19 +82,19 @@ export class SystemManager {
   }
 
   private createMachine() {
-    if (this.diskRomData) {
+    if (this.slot1RomData) {
       console.log("Creating machine with disk ROM support");
       console.log("BIOS ROM size:", this.biosRomData.length, "bytes");
-      console.log("Disk ROM size:", this.diskRomData.length, "bytes");
-      console.log("Disk ROM size (hex):", "0x" + this.diskRomData.length.toString(16));
-      
+      console.log("Disk ROM size:", this.slot1RomData.length, "bytes");
+      console.log("Disk ROM size (hex):", "0x" + this.slot1RomData.length.toString(16));
+
       // Check if disk ROM size is valid
-      if (this.diskRomData.length !== 0x4000 && this.diskRomData.length !== 0x8000 && this.diskRomData.length !== 0x10000) {
+      if (this.slot1RomData.length !== 0x4000 && this.slot1RomData.length !== 0x8000 && this.slot1RomData.length !== 0x10000) {
         console.warn("Warning: Disk ROM size is not standard (16KB, 32KB, or 64KB)");
       }
-      
+
       try {
-        this.machine = Machine.newWithDisk(this.biosRomData, this.diskRomData);
+        this.machine = Machine.newWithDisk(this.biosRomData, this.slot1RomData);
         this._hasDiskSupport = true;
       } catch (error) {
         console.error("Failed to create machine with disk ROM:", error);
@@ -110,7 +110,7 @@ export class SystemManager {
   private restartMachine() {
     // Create new machine with updated configuration
     this.createMachine();
-    
+
     // Show restart message
     const canvas = document.getElementById('screen') as HTMLCanvasElement;
     const ctx = canvas.getContext('2d');
@@ -122,7 +122,7 @@ export class SystemManager {
       ctx.textAlign = 'center';
       ctx.fillText('Restarting with Disk ROM...', canvas.width / 2, canvas.height / 2);
     }
-    
+
     // Notify listeners that machine has been restarted
     setTimeout(() => {
       if (this.onMachineRestart && this.machine) {
@@ -136,9 +136,9 @@ export class SystemManager {
   }
 
   hasDiskRom(): boolean {
-    return this.diskRomData !== null;
+    return this.slot1RomData !== null;
   }
-  
+
   hasDiskSupport(): boolean {
     return this._hasDiskSupport;
   }
