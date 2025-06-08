@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::wasm_bindgen;
 use z80::Z80_io;
 
-use super::{fdc::WD2793, ppi::Ppi, psg::AY38910, vdp::TMS9918};
+use super::{ppi::Ppi, psg::AY38910, vdp::TMS9918};
 use crate::{
     machine::Message,
     slot::{RamSlot, RomSlot, SlotType},
@@ -15,7 +15,6 @@ pub struct Bus {
     pub vdp: TMS9918,
     pub psg: AY38910,
     pub ppi: Ppi,
-    pub fdc: Option<WD2793>,
 
     slots: [SlotType; 4],
 }
@@ -30,7 +29,6 @@ impl Bus {
             vdp: TMS9918::new(queue),
             psg: AY38910::new(),
             ppi: Ppi::new(),
-            fdc: None, // FDC is optional, can be enabled later
             slots: [
                 slots[0].clone(),
                 slots[1].clone(),
@@ -60,9 +58,6 @@ impl Bus {
         self.vdp.reset();
         self.psg.reset();
         self.ppi.reset();
-        if let Some(fdc) = &mut self.fdc {
-            fdc.reset();
-        }
     }
 
     pub fn clock(&mut self, cycles: u32) {
@@ -76,60 +71,12 @@ impl Bus {
         self.psg.set_pulse_signal(pulse_active);
     }
 
-    pub fn enable_fdc(&mut self) {
-        if self.fdc.is_none() {
-            tracing::info!("[BUS] Enabling FDC");
-            self.fdc = Some(WD2793::new());
-            // Sync initial motor state from PPI
-            self.sync_fdc_motor_with_ppi();
-        } else {
-            tracing::warn!("[BUS] FDC already enabled");
-        }
+    pub fn get_slot(&self, slot: usize) -> &SlotType {
+        &self.slots[slot]
     }
 
-    fn sync_fdc_motor_with_ppi(&mut self) {
-        if let Some(fdc) = &mut self.fdc {
-            let ppi_c_value = self.ppi.register_c();
-            tracing::trace!(
-                "[PPI->FDC Sync] Called with PPI Port C: {:02X}",
-                ppi_c_value
-            );
-
-            // Determine the target motor state based on PPI Port C bits
-            // Bit 4 (0x10) for Drive A motor (0 = ON)
-            // Bit 5 (0x20) for Drive B motor (0 = ON)
-            let motor_a_on_via_ppi = (ppi_c_value & 0x10) == 0;
-            let motor_b_on_via_ppi = (ppi_c_value & 0x20) == 0;
-
-            // The motor state to set depends on which drive is currently selected in the FDC
-            let target_motor_on = if fdc.current_drive == 0 {
-                motor_a_on_via_ppi
-            } else {
-                motor_b_on_via_ppi
-            };
-
-            // Only update FDC if the effective motor state for its current drive has changed
-            if fdc.motor_on != target_motor_on {
-                // Construct the value for fdc.drive_control
-                let mut drive_control_arg = fdc.current_drive;
-                drive_control_arg |= fdc.side << 1;
-                if target_motor_on {
-                    drive_control_arg |= 0x80; // Motor ON command
-                }
-
-                let old_fdc_motor_state = fdc.motor_on;
-                fdc.drive_control(drive_control_arg);
-
-                tracing::info!(
-                    "[PPI->FDC Sync] PPI Port C: {:02X}. For FDC Drive {}: Motor state changed from {} to {}. Called fdc.drive_control({:02X})",
-                    ppi_c_value,
-                    fdc.current_drive,
-                    if old_fdc_motor_state { "ON" } else { "OFF" },
-                    if target_motor_on { "ON" } else { "OFF" },
-                    drive_control_arg
-                );
-            }
-        }
+    pub fn get_slot_mut(&mut self, slot: usize) -> &mut SlotType {
+        &mut self.slots[slot]
     }
 
     pub fn input(&mut self, port: u8) -> u8 {
@@ -174,39 +121,6 @@ impl Bus {
                 keyboard_state
             }
             0xAA | 0xAB => self.ppi.read(port), // Other PPI ports
-            0x7C..=0x7F => {
-                if let Some(fdc) = &mut self.fdc {
-                    let result = fdc.read(port);
-                    if port == 0x7C {
-                        tracing::info!(
-                            "[BUS] FDC status read from port {:02X}: {:02X}",
-                            port,
-                            result
-                        );
-                    }
-                    result
-                } else {
-                    tracing::warn!("[BUS] FDC read from port {:02X} but FDC not enabled!", port);
-                    0xFF
-                }
-            }
-            0xD0..=0xD7 => {
-                // Microsol FDC ports (mapped to same offsets as 0x7C-0x7F)
-                if let Some(fdc) = &mut self.fdc {
-                    let p = port - 0xD0 + 0x7C;
-                    let val = fdc.read(p);
-                    tracing::info!(
-                        "[FDC I/O Read] Port {:02X} (mapped to {:02X}) -> {:02X}",
-                        port,
-                        p,
-                        val
-                    );
-                    val
-                } else {
-                    tracing::warn!("[FDC I/O Read] FDC disabled, Port {:02X}", port);
-                    0xFF
-                }
-            }
             _ => {
                 // Only log disk-related ports
                 if (0x7C..=0x7F).contains(&port)
@@ -258,45 +172,9 @@ impl Bus {
                 // PPI Port C or Control
                 let old_register_c = self.ppi.register_c();
                 self.ppi.write(port, data);
-                self.sync_fdc_motor_with_ppi();
                 // Update PSG pulse signal if register C changed
                 if port == 0xAA || (port == 0xAB && old_register_c != self.ppi.register_c()) {
                     self.update_psg_pulse_signal();
-                }
-            }
-            0x7C..=0x7F => {
-                let p = port - 0xD0 + 0x7C;
-                tracing::info!(
-                    "[FDC I/O Write] Port {:02X} (mapped to {:02X}) <- {:02X}",
-                    port,
-                    p,
-                    data
-                );
-                if let Some(fdc) = &mut self.fdc {
-                    fdc.write(p, data);
-                } else {
-                    tracing::warn!("[FDC I/O Write] FDC disabled, Port {:02X}", port);
-                }
-            }
-            0xD0..=0xD7 => {
-                // Microsol FDC ports (mapped to same offsets as 0x7C-0x7F)
-                if let Some(fdc) = &mut self.fdc {
-                    fdc.write(port - 0xD0 + 0x7C, data);
-                }
-            }
-            0xD8 => {
-                // Microsol drive control port
-
-                tracing::info!(
-                    "[FDC I/O Write] Port {:02X} (Microsol Drive Ctrl) <- {:02X}",
-                    port,
-                    data
-                );
-                if let Some(fdc) = &mut self.fdc {
-                    fdc.drive_control(data);
-                    self.sync_fdc_motor_with_ppi();
-                } else {
-                    tracing::warn!("[FDC I/O Write] FDC disabled, Port {:02X}", port);
                 }
             }
             0xFB => {
@@ -307,12 +185,6 @@ impl Bus {
                     port,
                     data
                 );
-                if let Some(fdc) = &mut self.fdc {
-                    fdc.drive_control(data);
-                    self.sync_fdc_motor_with_ppi();
-                } else {
-                    tracing::warn!("[FDC I/O Write] FDC disabled, Port {:02X}", port);
-                }
             }
             _ => {
                 // Only log disk-related ports
@@ -341,31 +213,6 @@ impl Bus {
     }
 
     pub fn write_byte(&mut self, addr: u16, data: u8) {
-        // Log writes to specific disk-related hooks only
-        if (0xF24F..=0xF251).contains(&addr) || // Disk error handler
-           (0xF323..=0xF325).contains(&addr) || // Disk format
-           (0xF37D..=0xF380).contains(&addr) || // Disk boot
-           (addr == 0xFFCA || addr == 0xFFCB || addr == 0xFFCC) || // CALL SYSTEM
-           (0xF1C9..=0xF1CB).contains(&addr) || // NEWSTT hook (statement executor)
-           (0xF39A..=0xF39C).contains(&addr) || // GETYPR hook
-           (0xF663..=0xF665).contains(&addr) || // VALTYP and type checking area
-           (0xFFB1..=0xFFB3).contains(&addr)
-        // H.ERRO error hook
-        {
-            let desc = match addr {
-                0xF24F..=0xF251 => "Disk error handler",
-                0xF323..=0xF325 => "Disk format",
-                0xF37D..=0xF380 => "Disk boot",
-                0xFFCA..=0xFFCC => "CALL SYSTEM",
-                0xF1C9..=0xF1CB => "NEWSTT hook",
-                0xF39A..=0xF39C => "GETYPR hook",
-                0xF663 => "VALTYP (08=double precision)",
-                0xF664..=0xF665 => "VALTYP area",
-                _ => "Unknown hook",
-            };
-            tracing::info!("[HOOK] Write to {:04X} = {:02X} ({})", addr, data, desc);
-        }
-
         let (slot_number, addr) = self.translate_address(addr);
         self.slots[slot_number].write(addr, data);
     }
@@ -375,6 +222,14 @@ impl Bus {
         let high_byte = ((value & 0xFF00) >> 8) as u8;
         self.write_byte(address, low_byte);
         self.write_byte(address + 1, high_byte);
+    }
+
+    pub fn write_block(&mut self, start_addr: u16, data: &[u8]) {
+        let mut addr = start_addr;
+        for &byte in data {
+            self.write_byte(addr, byte);
+            addr = addr.wrapping_add(1);
+        }
     }
 
     pub fn read_word(&self, address: u16) -> u16 {

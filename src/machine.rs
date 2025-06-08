@@ -5,7 +5,7 @@ use z80::{Z80_io, Z80};
 use crate::{
     bus::{Bus, MemorySegment},
     clock::{Clock, ClockEvent, CPU_CYCLES_PER_SCANLINE, SCANLINES_PER_FRAME},
-    fdc::DiskImage,
+    cpu_extensions::{CpuExtensionHandler, CpuExtensionState},
     partial_hexdump,
     slot::{RamSlot, RomSlot, SlotType},
     vdp::TMS9918,
@@ -18,24 +18,31 @@ pub struct Machine {
     pub clock: Clock,
     pub cycles: usize,
     pub frame_ready: bool,
+    pub disk_drive: Option<crate::disk_drive::SharedDiskDrive>,
 }
 
 impl Machine {
     pub fn new(slots: &[SlotType]) -> Self {
-        tracing::info!("Initializing MSX with slots: {:?}", slots);
+        tracing::trace!("Initializing MSX with slots: {:?}", slots);
         let queue = Rc::new(RefCell::new(VecDeque::new()));
         let bus = Rc::new(RefCell::new(Bus::new(slots, queue.clone())));
         let io = Io::new(bus.clone());
         let cpu = Z80::new(io);
 
-        Self {
+        let mut machine = Self {
             bus,
             cpu,
             queue,
             clock: Clock::new(),
             cycles: 0,
             frame_ready: false,
-        }
+            disk_drive: None,
+        };
+
+        // Check if slot 1 has a disk ROM and set up disk system if so
+        machine.check_and_setup_disk_system();
+
+        machine
     }
 
     pub fn get_cycles(&self) -> usize {
@@ -130,6 +137,20 @@ impl Machine {
 
             // Execute CPU instruction
             let cycles_taken = self.cpu.step();
+            
+            // Debug disk ROM calls
+            if self.cpu.pc >= 0x7000 && self.cpu.pc < 0x8000 && self.cycles % 1000 == 0 {
+                static mut LAST_PC: u16 = 0;
+                unsafe {
+                    if self.cpu.pc != LAST_PC {
+                        LAST_PC = self.cpu.pc;
+                        // Only log significant PCs
+                        if self.cpu.pc == 0x744D || self.cpu.pc == 0x780B || self.cpu.pc == 0x785F {
+                            tracing::trace!("Disk ROM PC: 0x{:04X}", self.cpu.pc);
+                        }
+                    }
+                }
+            }
 
             // Debug interrupt state changes
             // static mut LAST_IM: u8 = 0xFF;
@@ -274,6 +295,48 @@ impl Machine {
         self.clock.frame_progress()
     }
 
+    fn check_and_setup_disk_system(&mut self) {
+        use crate::disk_drive::SharedDiskDrive;
+        use crate::disk_rom_manager::DiskRomManager;
+
+        // Check if slot 1 contains a disk ROM (typically 16KB at 0x4000)
+        let has_disk_rom = {
+            let bus = self.bus.borrow();
+            let slot1 = bus.get_slot(1);
+            // Check for disk ROM signature at typical locations
+            if slot1.size() >= 0x4000 {
+                let byte0 = slot1.read(0x4000);
+                let byte1 = slot1.read(0x4001);
+                byte0 == 0x41 && byte1 == 0x42 // 'AB' header
+            } else {
+                false
+            }
+        };
+
+        if has_disk_rom {
+            tracing::info!("Disk ROM detected in slot 1, setting up disk system");
+
+            // Patch the disk ROM if it's a RomSlot
+            {
+                let mut bus = self.bus.borrow_mut();
+                if let SlotType::Rom(rom_slot) = bus.get_slot_mut(1) {
+                    DiskRomManager::patch_disk_rom(rom_slot);
+                }
+            }
+
+            // Create disk drive system
+            let disk_drive = SharedDiskDrive::new();
+
+            // Set up disk extensions
+            DiskRomManager::setup_disk_system(&self.cpu.io, disk_drive.clone(), self.bus.clone());
+
+            // Store the disk drive for later use
+            self.disk_drive = Some(disk_drive);
+
+            tracing::info!("Disk system initialized");
+        }
+    }
+
     pub fn primary_slot_config(&self) -> u8 {
         self.bus.borrow().primary_slot_config()
     }
@@ -282,20 +345,80 @@ impl Machine {
         self.bus.borrow().memory_segments()
     }
 
-    pub fn enable_disk_system(&mut self) {
-        tracing::info!("[Machine] Enabling disk system");
-        self.bus.borrow_mut().enable_fdc();
-    }
+    /// Load a DSK image file into the specified drive (0 = A:, 1 = B:)
+    pub fn load_disk_image(&mut self, drive: u8, image_data: Vec<u8>) -> Result<(), String> {
+        use crate::dsk_image::DiskImage;
 
-    pub fn insert_disk(&mut self, drive: usize, image: DiskImage) {
-        if let Some(fdc) = &mut self.bus.borrow_mut().fdc {
-            fdc.insert_disk(drive, image);
+        if let Some(ref disk_drive) = self.disk_drive {
+            // Parse the disk image
+            let disk_image = DiskImage::from_bytes(image_data)
+                .map_err(|e| format!("Failed to parse disk image: {}", e))?;
+
+            // Store info before moving disk_image
+            let total_sectors = disk_image.get_total_sectors();
+            let size_kb = total_sectors as u32 * 512 / 1024;
+
+            // Insert into drive
+            if let Ok(mut drive_guard) = disk_drive.clone_inner().lock() {
+                drive_guard
+                    .insert_disk(drive, disk_image)
+                    .map_err(|e| format!("Failed to insert disk: {}", e))?;
+
+                tracing::info!(
+                    "Loaded disk image into drive {}: {} KB, {} sectors",
+                    if drive == 0 { "A:" } else { "B:" },
+                    size_kb,
+                    total_sectors
+                );
+                Ok(())
+            } else {
+                Err("Failed to lock disk drive".to_string())
+            }
+        } else {
+            Err(
+                "Disk system not initialized. Make sure a disk ROM is loaded in slot 1."
+                    .to_string(),
+            )
         }
     }
 
-    pub fn eject_disk(&mut self, drive: usize) {
-        if let Some(fdc) = &mut self.bus.borrow_mut().fdc {
-            fdc.eject_disk(drive);
+    /// Eject disk from the specified drive
+    pub fn eject_disk(&mut self, drive: u8) -> Result<(), String> {
+        if let Some(ref disk_drive) = self.disk_drive {
+            if let Ok(mut drive_guard) = disk_drive.clone_inner().lock() {
+                drive_guard
+                    .eject_disk(drive)
+                    .map_err(|e| format!("Failed to eject disk: {}", e))?;
+                Ok(())
+            } else {
+                Err("Failed to lock disk drive".to_string())
+            }
+        } else {
+            Err("Disk system not initialized".to_string())
+        }
+    }
+
+    /// Check if disk system is available
+    pub fn has_disk_system(&self) -> bool {
+        self.disk_drive.is_some()
+    }
+    
+    /// Insert a new formatted disk into the specified drive
+    pub fn insert_new_disk(&mut self, drive: u8, media_type: u8) -> Result<(), String> {
+        if let Some(ref disk_drive) = self.disk_drive {
+            if let Ok(mut drive_guard) = disk_drive.clone_inner().lock() {
+                drive_guard
+                    .insert_new_disk(drive, media_type)
+                    .map_err(|e| format!("Failed to insert new disk: {}", e))?;
+                Ok(())
+            } else {
+                Err("Failed to lock disk drive".to_string())
+            }
+        } else {
+            Err(
+                "Disk system not initialized. Make sure a disk ROM is loaded in slot 1."
+                    .to_string(),
+            )
         }
     }
 }
@@ -323,6 +446,7 @@ impl Default for Machine {
             clock: Clock::new(),
             cycles: 0,
             frame_ready: false,
+            disk_drive: None,
         }
     }
 }
@@ -330,7 +454,6 @@ impl Default for Machine {
 #[derive(Default)]
 pub struct MachineBuilder {
     slots: Vec<SlotType>,
-    enable_disk: bool,
 }
 
 impl MachineBuilder {
@@ -354,11 +477,6 @@ impl MachineBuilder {
         self
     }
 
-    pub fn with_disk_support(&mut self) -> &mut Self {
-        self.enable_disk = true;
-        self
-    }
-
     pub fn build(&self) -> Machine {
         if self.slots.len() != 4 {
             panic!(
@@ -367,11 +485,7 @@ impl MachineBuilder {
             );
         }
 
-        let mut machine = Machine::new(&self.slots);
-        if self.enable_disk {
-            machine.enable_disk_system();
-        }
-        machine
+        Machine::new(&self.slots)
     }
 }
 
@@ -406,11 +520,21 @@ pub enum Message {
 
 pub struct Io {
     pub bus: Rc<RefCell<Bus>>,
+    pub extension_handlers: RefCell<std::collections::HashMap<u8, Box<dyn CpuExtensionHandler>>>,
 }
 
 impl Io {
     pub fn new(bus: Rc<RefCell<Bus>>) -> Self {
-        Self { bus }
+        Self {
+            bus,
+            extension_handlers: RefCell::new(std::collections::HashMap::new()),
+        }
+    }
+
+    pub fn register_extension_handler(&self, ext_num: u8, handler: Box<dyn CpuExtensionHandler>) {
+        self.extension_handlers
+            .borrow_mut()
+            .insert(ext_num, handler);
     }
 }
 
@@ -429,5 +553,35 @@ impl Z80_io for Io {
 
     fn port_out(&mut self, port: u16, value: u8) {
         self.bus.borrow_mut().output(port as u8, value)
+    }
+
+    fn handle_extension(&mut self, ext_num: u8, z80: &mut Z80<Self>) -> Option<u32> {
+        // First check if we have a registered handler for this extension
+        let handler_exists = self.extension_handlers.borrow().contains_key(&ext_num);
+
+        if handler_exists {
+            let mut state = CpuExtensionState::from_z80(z80, ext_num);
+
+            // Call the handler
+            let handled =
+                if let Some(handler) = self.extension_handlers.borrow_mut().get_mut(&ext_num) {
+                    handler.extension_begin(&mut state)
+                } else {
+                    false
+                };
+
+            if handled {
+                // Apply any state changes back to the Z80
+                state.apply_to_z80(z80);
+
+                // TODO: Handle extension_finish if needed
+
+                // Return cycles consumed (4 for the ED XX instruction)
+                return Some(4);
+            }
+        }
+
+        // Extension not handled
+        None
     }
 }
