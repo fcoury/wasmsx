@@ -719,6 +719,7 @@ dependencies = [
  "ctor",
  "derivative",
  "js-sys",
+ "once_cell",
  "serde",
  "serde-big-array",
  "serde_json",
