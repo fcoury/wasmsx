@@ -20,9 +20,22 @@ const AUDIO_BUFFER_SIZE = 2048; // Larger buffer for stability
 const PSG_NATIVE_RATE = 111860; // PSG native rate (CPU clock / 32)
 
 const PALETTE = [
-  0x000000, 0x010101, 0x3eb849, 0x74d07d, 0x5955e0, 0x8076f1, 0xb95e51,
-  0x65dbef, 0xdb6559, 0xff897d, 0xccc35e, 0xded087, 0x3aa241, 0xb766b5,
-  0xcccccc, 0xffffff,
+  0x000000,
+  0x010101,
+  0x3eb849,
+  0x74d07d,
+  0x5955e0,
+  0x8076f1,
+  0xb95e51,
+  0x65dbef,
+  0xdb6559,
+  0xff897d,
+  0xccc35e,
+  0xded087,
+  0x3aa241,
+  0xb766b5,
+  0xcccccc,
+  0xffffff,
 ];
 
 class Renderer {
@@ -52,7 +65,7 @@ class Renderer {
     this.ctx = ctx;
     this.screenImageData = this.ctx.createImageData(
       screen.width,
-      screen.height
+      screen.height,
     );
   }
 
@@ -268,16 +281,18 @@ class Emulator {
         const value = vram[i + j] as number;
         row.push(value.toString(16).padStart(2, "0"));
         chars.push(
-          value >= 32 && value <= 126 ? String.fromCharCode(value) : "."
+          value >= 32 && value <= 126 ? String.fromCharCode(value) : ".",
         );
       }
       const addr = i.toString(16).padStart(4, "0");
       rows.push(addr + ":  " + row.join(" ") + "  " + chars.join(""));
     }
 
-    this.vram.innerHTML = `<pre>${rows
-      .map((row) => `<div>${row}</div>`)
-      .join("")}</pre>`;
+    this.vram.innerHTML = `<pre>${
+      rows
+        .map((row) => `<div>${row}</div>`)
+        .join("")
+    }</pre>`;
   }
 
   /**
@@ -318,7 +333,7 @@ class Emulator {
       this.audioProcessor = this.audioContext.createScriptProcessor(
         AUDIO_BUFFER_SIZE,
         0, // no input channels
-        1 // mono output
+        1, // mono output
       );
 
       // Connect to speakers
@@ -326,7 +341,7 @@ class Emulator {
       this.audioEnabled = true;
 
       console.log(
-        `Audio initialized: ${AUDIO_SAMPLE_RATE}Hz, buffer size: ${AUDIO_BUFFER_SIZE}`
+        `Audio initialized: ${AUDIO_SAMPLE_RATE}Hz, buffer size: ${AUDIO_BUFFER_SIZE}`,
       );
 
       this.audioProcessor.onaudioprocess = (event) => {
@@ -408,7 +423,7 @@ class DiskController {
 
   constructor(machine: Machine, hasDiskSupport: boolean = false) {
     console.log(
-      `DiskController initialized with machine: ${machine}, hasDiskSupport: ${hasDiskSupport}`
+      `DiskController initialized with machine: ${machine}, hasDiskSupport: ${hasDiskSupport}`,
     );
     this.machine = machine;
     this.systemHasDiskSupport = hasDiskSupport;
@@ -440,11 +455,12 @@ class DiskController {
       const mountButton = document.getElementById(`drive-${drive}-mount`);
       const ejectButton = document.getElementById(`drive-${drive}-eject`);
       const fileInput = document.getElementById(
-        `drive-${drive}-file`
+        `drive-${drive}-file`,
       ) as HTMLInputElement;
 
       if (mountButton && fileInput) {
         const mountHandler = () => {
+          console.log(`Mount button clicked for drive ${drive}`);
           fileInput.click();
         };
         mountButton.addEventListener("click", mountHandler);
@@ -470,6 +486,9 @@ class DiskController {
       if (fileInput) {
         const changeHandler = (event: Event) => {
           const file = (event.target as HTMLInputElement).files?.[0];
+          console.log(
+            `File input changed for drive ${drive}, file: ${file?.name}`,
+          );
           if (file) {
             this.mountDisk(drive, file);
           }
@@ -480,6 +499,10 @@ class DiskController {
           event: "change",
           handler: changeHandler,
         });
+      } else {
+        console.warn(
+          `File input for drive ${drive} not found. Disk mounting will not work.`,
+        );
       }
     }
   }
@@ -487,7 +510,7 @@ class DiskController {
   private async mountDisk(drive: number, file: File) {
     try {
       console.log(
-        `Mounting disk in drive ${drive}, system has disk support: ${this.systemHasDiskSupport}`
+        `Mounting disk in drive ${drive}, system has disk support: ${this.systemHasDiskSupport}`,
       );
 
       // Only enable disk system if we don't have disk ROM support
@@ -524,7 +547,7 @@ class DiskController {
   private updateDriveStatus(drive: number, filename: string | null) {
     const statusElement = document.getElementById(`drive-${drive}-status`);
     const ejectButton = document.getElementById(
-      `drive-${drive}-eject`
+      `drive-${drive}-eject`,
     ) as HTMLButtonElement;
 
     if (statusElement && ejectButton) {
@@ -563,7 +586,7 @@ function setupMachine(machine: Machine, isRestart: boolean = false) {
   const hasDiskSupport = systemManager.hasDiskSupport();
 
   console.log(
-    `Setting up machine with disk support: ${hasDiskSupport}, isRestart: ${isRestart}`
+    `Setting up machine with disk support: ${hasDiskSupport}, isRestart: ${isRestart}`,
   );
 
   // Reuse existing DiskController on restart, create new one on initial setup
@@ -580,7 +603,7 @@ function setupMachine(machine: Machine, isRestart: boolean = false) {
 
   // Set up audio toggle button
   const audioToggle = document.getElementById(
-    "audio-toggle"
+    "audio-toggle",
   ) as HTMLButtonElement;
   const audioStatus = document.getElementById("audio-status") as HTMLDivElement;
 
@@ -606,8 +629,8 @@ function setupMachine(machine: Machine, isRestart: boolean = false) {
         }
         return;
       }
-      const machine =
-        (window as any).currentMachine || currentEmulator?.machine;
+      const machine = (window as any).currentMachine ||
+        currentEmulator?.machine;
       if (machine) {
         machine.keyDown(e.code);
       }
@@ -620,8 +643,8 @@ function setupMachine(machine: Machine, isRestart: boolean = false) {
         }
         return;
       }
-      const machine =
-        (window as any).currentMachine || currentEmulator?.machine;
+      const machine = (window as any).currentMachine ||
+        currentEmulator?.machine;
       if (machine) {
         machine.keyUp(e.code);
       }
@@ -644,13 +667,13 @@ function setupMachine(machine: Machine, isRestart: boolean = false) {
 
 async function setupBiosSelector() {
   const biosSelector = document.getElementById(
-    "bios-selector"
+    "bios-selector",
   ) as HTMLSelectElement;
   const restartButton = document.getElementById(
-    "bios-restart"
+    "bios-restart",
   ) as HTMLButtonElement;
   const biosFileInput = document.getElementById(
-    "bios-file"
+    "bios-file",
   ) as HTMLInputElement;
 
   if (!biosSelector || !restartButton || !biosFileInput) {
@@ -688,14 +711,14 @@ async function setupBiosSelector() {
 
         // Update the select option text to show the filename
         const customOption = biosSelector.querySelector(
-          'option[value="custom"]'
+          'option[value="custom"]',
         );
         if (customOption) {
           customOption.textContent = `Custom: ${file.name}`;
         }
 
         console.log(
-          `Custom ROM loaded: ${file.name} (${data.length} bytes, padded to ${romData.length} bytes)`
+          `Custom ROM loaded: ${file.name} (${data.length} bytes, padded to ${romData.length} bytes)`,
         );
       } catch (error) {
         console.error("Failed to load custom ROM:", error);
