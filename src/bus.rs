@@ -225,6 +225,18 @@ impl Bus {
     }
 
     pub fn write_block(&mut self, start_addr: u16, data: &[u8]) {
+        // Temporary trace for MSX FILES diagnosis
+        if start_addr == 0xEBAC {
+            let dump_len = data.len().min(32);
+            let slice = &data[..dump_len];
+            let hex: Vec<String> = slice.iter().map(|b| format!("{:02X}", b)).collect();
+            tracing::info!(
+                "[TRACE] Bus::write_block dumping first {} bytes to 0xEBAC: {}",
+                dump_len,
+                hex.join(" ")
+            );
+        }
+
         let mut addr = start_addr;
         for &byte in data {
             self.write_byte(addr, byte);
