@@ -6,10 +6,12 @@ use crate::dsk_image::DiskImage;
 use std::sync::{Arc, Mutex};
 
 pub struct DiskDrive {
-    drives: [Option<DiskImage>; 2],  // A: and B:
+    drives: [Option<DiskImage>; 2], // A: and B:
     disk_changed: [Option<bool>; 2],
     motor_on: [bool; 2],
     motor_off_time: [Option<std::time::Instant>; 2],
+    // Disk-change flipflop for detecting disks present at boot time
+    disk_changed_flipflop: [bool; 2],
 }
 
 impl DiskDrive {
@@ -19,6 +21,7 @@ impl DiskDrive {
             disk_changed: [None, None],
             motor_on: [false, false],
             motor_off_time: [None, None],
+            disk_changed_flipflop: [false, false],
         }
     }
 
@@ -26,11 +29,16 @@ impl DiskDrive {
         if drive >= 2 {
             return Err(DiskError::InvalidDrive);
         }
-        
+
         self.drives[drive as usize] = Some(image);
         self.disk_changed[drive as usize] = Some(true);
-        tracing::info!("Disk inserted in drive {}", if drive == 0 { "A:" } else { "B:" });
-        
+        // Set the disk-changed flipflop to true on disk insertion
+        self.disk_changed_flipflop[drive as usize] = true;
+        tracing::info!(
+            "Disk inserted in drive {}",
+            if drive == 0 { "A:" } else { "B:" }
+        );
+
         Ok(())
     }
 
@@ -38,30 +46,33 @@ impl DiskDrive {
         if drive >= 2 {
             return Err(DiskError::InvalidDrive);
         }
-        
+
         self.drives[drive as usize] = None;
         self.disk_changed[drive as usize] = None;
         self.motor_on[drive as usize] = false;
-        tracing::info!("Disk ejected from drive {}", if drive == 0 { "A:" } else { "B:" });
-        
+        tracing::info!(
+            "Disk ejected from drive {}",
+            if drive == 0 { "A:" } else { "B:" }
+        );
+
         Ok(())
     }
-    
+
     /// Insert a new formatted disk
     pub fn insert_new_disk(&mut self, drive: u8, media_type: u8) -> Result<(), DiskError> {
         if drive >= 2 {
             return Err(DiskError::InvalidDrive);
         }
-        
+
         let disk = DiskImage::new_empty(media_type)?;
         self.insert_disk(drive, disk)?;
-        
+
         tracing::info!(
-            "Inserted new formatted {} disk in drive {}", 
+            "Inserted new formatted {} disk in drive {}",
             if media_type == 0xF8 { "360KB" } else { "720KB" },
             if drive == 0 { "A:" } else { "B:" }
         );
-        
+
         Ok(())
     }
 
@@ -69,7 +80,13 @@ impl DiskDrive {
         if drive >= 2 {
             return None;
         }
-        
+
+        // Check the disk-changed flipflop first (for disks present at boot)
+        if self.disk_changed_flipflop[drive as usize] {
+            self.disk_changed_flipflop[drive as usize] = false; // Clear the flipflop
+            return Some(true); // Report disk has changed
+        }
+
         let changed = self.disk_changed[drive as usize];
         // Clear the changed flag after reading
         if changed == Some(true) {
@@ -77,22 +94,27 @@ impl DiskDrive {
         }
         changed
     }
-    
+
     pub fn clear_disk_changed(&mut self, drive: u8) {
         if drive < 2 && self.has_disk(drive) {
             self.disk_changed[drive as usize] = Some(false);
         }
     }
 
-    pub fn read_sectors(&mut self, drive: u8, start_sector: u16, count: u8) -> Result<Vec<u8>, DiskError> {
+    pub fn read_sectors(
+        &mut self,
+        drive: u8,
+        start_sector: u16,
+        count: u8,
+    ) -> Result<Vec<u8>, DiskError> {
         if drive >= 2 {
             return Err(DiskError::InvalidDrive);
         }
-        
+
         // Turn on motor
         self.motor_on[drive as usize] = true;
         self.motor_off_time[drive as usize] = None;
-        
+
         if let Some(disk) = &self.drives[drive as usize] {
             tracing::debug!(
                 "Reading {} sectors from drive {} starting at sector {}",
@@ -100,21 +122,40 @@ impl DiskDrive {
                 if drive == 0 { "A:" } else { "B:" },
                 start_sector
             );
-            disk.read_sectors(start_sector, count)
+            // Trace sector 5 content for FILES diagnosis
+            let result = disk.read_sectors(start_sector, count);
+            if start_sector == 5 && count == 1 {
+                if let Ok(ref data) = result {
+                    let dump_len = data.len().min(32);
+                    let slice = &data[..dump_len];
+                    let hex: Vec<String> = slice.iter().map(|b| format!("{:02X}", b)).collect();
+                    tracing::info!(
+                        "[TRACE] DiskDrive::read_sectors sector 5 first {} bytes: {}",
+                        dump_len,
+                        hex.join(" ")
+                    );
+                }
+            }
+            result
         } else {
             Err(DiskError::NoDisk)
         }
     }
 
-    pub fn write_sectors(&mut self, drive: u8, start_sector: u16, data: &[u8]) -> Result<(), DiskError> {
+    pub fn write_sectors(
+        &mut self,
+        drive: u8,
+        start_sector: u16,
+        data: &[u8],
+    ) -> Result<(), DiskError> {
         if drive >= 2 {
             return Err(DiskError::InvalidDrive);
         }
-        
+
         // Turn on motor
         self.motor_on[drive as usize] = true;
         self.motor_off_time[drive as usize] = None;
-        
+
         if let Some(disk) = &mut self.drives[drive as usize] {
             tracing::debug!(
                 "Writing {} bytes to drive {} starting at sector {}",
@@ -185,17 +226,17 @@ impl DiskDrive {
                     DiskParameterBlock {
                         media_type: 0xF8,
                         sector_size: 512,
-                        dir_mask: 0x70,         // Directory mask
-                        dir_shift: 4,           // Directory shift
-                        cluster_mask: 0x01,     // Cluster mask  
-                        cluster_shift: 1,       // Cluster shift (2 sectors per cluster)
-                        fat_start: 1,           // First FAT sector
-                        fat_copies: 2,          // Number of FAT copies
-                        dir_entries: 112,       // Root directory entries
-                        data_start: 7,          // First data sector
-                        clusters: 354,          // Total clusters
-                        fat_size: 2,            // Sectors per FAT
-                        dir_start: 5,           // First directory sector
+                        dir_mask: 0x70,     // Directory mask
+                        dir_shift: 4,       // Directory shift
+                        cluster_mask: 0x01, // Cluster mask
+                        cluster_shift: 1,   // Cluster shift (2 sectors per cluster)
+                        fat_start: 1,       // First FAT sector
+                        fat_copies: 2,      // Number of FAT copies
+                        dir_entries: 112,   // Root directory entries
+                        data_start: 7,      // First data sector
+                        clusters: 354,      // Total clusters
+                        fat_size: 2,        // Sectors per FAT
+                        dir_start: 5,       // First directory sector
                     }
                 }
                 0xF9 => {
@@ -203,17 +244,17 @@ impl DiskDrive {
                     DiskParameterBlock {
                         media_type: 0xF9,
                         sector_size: 512,
-                        dir_mask: 0x70,         // Directory mask
-                        dir_shift: 4,           // Directory shift
-                        cluster_mask: 0x01,     // Cluster mask
-                        cluster_shift: 1,       // Cluster shift (2 sectors per cluster)
-                        fat_start: 1,           // First FAT sector
-                        fat_copies: 2,          // Number of FAT copies
-                        dir_entries: 112,       // Root directory entries
-                        data_start: 10,         // First data sector
-                        clusters: 713,          // Total clusters
-                        fat_size: 3,            // Sectors per FAT
-                        dir_start: 7,           // First directory sector
+                        dir_mask: 0x70,     // Directory mask
+                        dir_shift: 4,       // Directory shift
+                        cluster_mask: 0x01, // Cluster mask
+                        cluster_shift: 1,   // Cluster shift (2 sectors per cluster)
+                        fat_start: 1,       // First FAT sector
+                        fat_copies: 2,      // Number of FAT copies
+                        dir_entries: 112,   // Root directory entries
+                        data_start: 10,     // First data sector
+                        clusters: 713,      // Total clusters
+                        fat_size: 3,        // Sectors per FAT
+                        dir_start: 7,       // First directory sector
                     }
                 }
                 _ => {
