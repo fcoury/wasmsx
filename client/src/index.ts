@@ -530,6 +530,14 @@ class DiskController {
 
       // Update UI
       this.updateDriveStatus(drive, file.name);
+
+      // Reset the file input so the same file can be selected again
+      const fileInput = document.getElementById(
+        `drive-${drive}-file`,
+      ) as HTMLInputElement;
+      if (fileInput) {
+        fileInput.value = "";
+      }
     } catch (error) {
       console.error(`Failed to mount disk in drive ${drive}:`, error);
       alert(`Failed to mount disk: ${error}`);
@@ -541,6 +549,14 @@ class DiskController {
       this.machine.ejectDisk(drive);
       this.mountedDisks.delete(drive);
       this.updateDriveStatus(drive, null);
+
+      // Reset the file input to allow re-selecting files
+      const fileInput = document.getElementById(
+        `drive-${drive}-file`,
+      ) as HTMLInputElement;
+      if (fileInput) {
+        fileInput.value = "";
+      }
     }
   }
 
