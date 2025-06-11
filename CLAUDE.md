@@ -86,3 +86,7 @@ Key test areas:
 - Keyboard: Matrix implementation complete, A and B keys functional
 - Sound: PSG structure in place, not fully implemented
 - Interrupts: VDP interrupt generation working
+
+## Workflow Notes
+
+- You don't need to run the server or the client as I am running them on the background, so feel free to ask me to re-run the test and report the logs every time you need it
