@@ -36,7 +36,7 @@ cargo make build
 cargo make dev
 ```
 
-Open http://localhost:3000 in your browser to use the emulator.
+Open http://127.0.0.1:9090 in your browser to use the emulator.
 
 ## Architecture
 
