@@ -44,9 +44,9 @@ export class SystemManager {
 
   private setupDiskRomLoader() {
     const fileInput = document.getElementById(
-      "disk-rom-file"
+      "slot1-rom-file"
     ) as HTMLInputElement;
-    const loadButton = document.getElementById("disk-rom-load");
+    const loadButton = document.getElementById("slot1-rom-load");
     const statusElement = document.getElementById("slot1-rom-status");
 
     loadButton?.addEventListener("click", () => {
@@ -92,7 +92,7 @@ export class SystemManager {
       console.log("Disk ROM size:", this.slot1RomData.length, "bytes");
       console.log(
         "Disk ROM size (hex):",
-        "0x" + this.slot1RomData.length.toString(16)
+        `0x${this.slot1RomData.length.toString(16)}`
       );
 
       // Check if disk ROM size is valid
@@ -107,7 +107,7 @@ export class SystemManager {
       }
 
       try {
-        this.machine = Machine.newWithDisk(this.biosRomData, this.slot1RomData);
+        this.machine = Machine.newWithRom(this.biosRomData, this.slot1RomData);
         this._hasDiskSupport = true;
       } catch (error) {
         console.error("Failed to create machine with disk ROM:", error);
