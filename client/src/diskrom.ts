@@ -1,5 +1,4 @@
-import init, { Machine } from "../pkg/wasmsx.js";
-import ROMS from "./roms.js";
+import { Machine } from "../pkg/wasmsx.js";
 
 export interface DiskRomConfig {
   biosRom: Uint8Array;
@@ -11,11 +10,11 @@ export class SystemManager {
   private machine: Machine | null = null;
   private slot1RomData: Uint8Array | null = null;
   private biosRomData: Uint8Array;
-  private currentBiosId: string = 'expert';
+  private currentBiosId = "expert";
   private onMachineRestart?: (machine: Machine) => void;
-  private _hasDiskSupport: boolean = false;
+  private _hasDiskSupport = false;
 
-  constructor(biosRomData: Uint8Array, biosId: string = 'expert') {
+  constructor(biosRomData: Uint8Array, biosId = "expert") {
     this.biosRomData = biosRomData;
     this.currentBiosId = biosId;
     this.setupDiskRomLoader();
@@ -44,15 +43,17 @@ export class SystemManager {
   }
 
   private setupDiskRomLoader() {
-    const fileInput = document.getElementById('disk-rom-file') as HTMLInputElement;
-    const loadButton = document.getElementById('disk-rom-load');
-    const statusElement = document.getElementById('slot1-rom-status');
+    const fileInput = document.getElementById(
+      "disk-rom-file"
+    ) as HTMLInputElement;
+    const loadButton = document.getElementById("disk-rom-load");
+    const statusElement = document.getElementById("slot1-rom-status");
 
-    loadButton?.addEventListener('click', () => {
+    loadButton?.addEventListener("click", () => {
       fileInput.click();
     });
 
-    fileInput?.addEventListener('change', async (event) => {
+    fileInput?.addEventListener("change", async (event) => {
       const file = (event.target as HTMLInputElement).files?.[0];
       if (file) {
         try {
@@ -61,13 +62,13 @@ export class SystemManager {
 
           if (statusElement) {
             statusElement.textContent = file.name;
-            statusElement.classList.add('mounted');
+            statusElement.classList.add("mounted");
           }
 
           // Restart the machine with the new configuration
           this.restartMachine();
         } catch (error) {
-          console.error('Failed to load disk ROM:', error);
+          console.error("Failed to load disk ROM:", error);
           alert(`Failed to load disk ROM: ${error}`);
         }
       }
@@ -78,7 +79,10 @@ export class SystemManager {
     if (!this.machine) {
       this.createMachine();
     }
-    return this.machine!;
+    if (!this.machine) {
+      throw new Error("Machine is not initialized");
+    }
+    return this.machine;
   }
 
   private createMachine() {
@@ -86,11 +90,20 @@ export class SystemManager {
       console.log("Creating machine with disk ROM support");
       console.log("BIOS ROM size:", this.biosRomData.length, "bytes");
       console.log("Disk ROM size:", this.slot1RomData.length, "bytes");
-      console.log("Disk ROM size (hex):", "0x" + this.slot1RomData.length.toString(16));
+      console.log(
+        "Disk ROM size (hex):",
+        "0x" + this.slot1RomData.length.toString(16)
+      );
 
       // Check if disk ROM size is valid
-      if (this.slot1RomData.length !== 0x4000 && this.slot1RomData.length !== 0x8000 && this.slot1RomData.length !== 0x10000) {
-        console.warn("Warning: Disk ROM size is not standard (16KB, 32KB, or 64KB)");
+      if (
+        this.slot1RomData.length !== 0x4000 &&
+        this.slot1RomData.length !== 0x8000 &&
+        this.slot1RomData.length !== 0x10000
+      ) {
+        console.warn(
+          "Warning: Disk ROM size is not standard (16KB, 32KB, or 64KB)"
+        );
       }
 
       try {
@@ -112,15 +125,19 @@ export class SystemManager {
     this.createMachine();
 
     // Show restart message
-    const canvas = document.getElementById('screen') as HTMLCanvasElement;
-    const ctx = canvas.getContext('2d');
+    const canvas = document.getElementById("screen") as HTMLCanvasElement;
+    const ctx = canvas.getContext("2d");
     if (ctx) {
-      ctx.fillStyle = '#000';
+      ctx.fillStyle = "#000";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = '#FFF';
-      ctx.font = '16px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText('Restarting with Disk ROM...', canvas.width / 2, canvas.height / 2);
+      ctx.fillStyle = "#FFF";
+      ctx.font = "16px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(
+        "Restarting with Disk ROM...",
+        canvas.width / 2,
+        canvas.height / 2
+      );
     }
 
     // Notify listeners that machine has been restarted
