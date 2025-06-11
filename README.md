@@ -2,6 +2,8 @@
 
 A WebAssembly-powered MSX computer emulator written in Rust that runs in the browser.
 
+![WasmSX Emulator Screenshot](res/img/screenshot.png)
+
 ## Features
 
 - **TMS9918 VDP** - Video Display Processor
@@ -114,4 +116,3 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - Z80 CPU emulation based on the z80 crate
 - C-BIOS team for the open-source MSX BIOS
 - MSX community for documentation and support
-
